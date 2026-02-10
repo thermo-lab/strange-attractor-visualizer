@@ -1,5 +1,90 @@
+<!DOCTYPE html>
 <html>
+  <head>
+    <title>Strange Attractor Miner</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="upgrade-insecure-requests"
+    />
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+        color: #0f0;
+        font-family: monospace;
+      }
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      #ui {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 15px;
+        border: 1px solid #0f0;
+      }
+      button {
+        background: #0f0;
+        color: #000;
+        border: none;
+        padding: 10px 20px;
+        font-weight: bold;
+        cursor: pointer;
+        font-family: monospace;
+      }
+      button:hover {
+        background: #fff;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
   <body>
-    Hello world!
+    <!--
+    <div id="ui">
+      <h3>ATTRACTOR ODE MINER</h3>
+      <button id="mineBtn">START MINING</button>
+      <button
+        id="saveBtn"
+        style="margin-left: 10px; background: #0088ff"
+      >
+        SAVE JSON
+      </button>
+      <button
+        id="loadBtn"
+        style="margin-left: 10px; background: #ff8800"
+      >
+        LOAD JSON
+      </button>
+
+      <input
+        type="file"
+        id="fileInput"
+        style="display: none"
+        accept=".json"
+      />
+
+      <div id="status">System Ready.</div>
+      <div
+        id="coeffs"
+        style="
+          margin-top: 10px;
+          font-size: 10px;
+          opacity: 0.7;
+          word-break: break-all;
+          width: 200px;
+        "
+      ></div>
+    </div>
+    -->
+    <canvas id="glcanvas"></canvas>
+
+    <script src="main-ode.js"></script>
   </body>
 </html>
