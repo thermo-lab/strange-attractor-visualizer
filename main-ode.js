@@ -25,7 +25,9 @@
 const MAX_ALLOCATION = 50000000; 
 
 // --- POD CONFIG ---
-const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
+const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec";
+
+const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL";
 
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
@@ -1561,7 +1563,7 @@ worker.onmessage = (e) => {
 
 let exportResolve = null;
 
-// --- UPDATED POD FUNCTION ---
+// --- UPDATED POD FUNCTION WITH RECAPTCHA ---
 async function startPrintCheckout(blob) {
   const uiExport = document.getElementById('ui-export-status');
   const container = document.getElementById('colorControls');
@@ -1571,14 +1573,32 @@ async function startPrintCheckout(blob) {
       return;
   }
 
-  uiExport.innerText = "⏳ Requesting Cloud Storage...";
+  // Check if reCAPTCHA is loaded
+  if (typeof grecaptcha === 'undefined') {
+      uiExport.innerText = "Error: reCAPTCHA not loaded. Refresh page.";
+      return;
+  }
+
+  uiExport.innerText = "🤖 Verifying you are human...";
   const allButtons = document.querySelectorAll('button');
   allButtons.forEach(b => b.disabled = true);
 
   try {
-    // 1. Upload Sequence
-    const authResp = await fetch(POD_API_URL);
+    // 1. GET FRESH RECAPTCHA TOKEN
+    // We do this here (not on click) so the token is fresh even if rendering took 5 mins.
+    const token = await new Promise((resolve) => {
+        grecaptcha.ready(() => {
+            grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: 'print_order'}).then(resolve);
+        });
+    });
+
+    uiExport.innerText = "⏳ Requesting Cloud Storage...";
+
+    // 2. Upload Sequence (Pass token in URL)
+    // We append the token as a query parameter
+    const authResp = await fetch(POD_API_URL + "?recaptcha_token=" + token);
     const authData = await authResp.json();
+    
     if (authData.error) throw new Error(authData.error);
 
     uiExport.innerText = "☁️ Uploading High-Res Image...";
@@ -1590,13 +1610,12 @@ async function startPrintCheckout(blob) {
 
     if (!uploadResp.ok) throw new Error("Upload failed: " + uploadResp.statusText);
 
-    // We MUST keep the ?Signature=... part, otherwise 
-    // neither the browser nor Peecho can access the file.
+    // We MUST keep the ?Signature=... part
     const signedUrl = authData.publicUrl;
     
     uiExport.innerText = "✅ Ready.";
 
-    // 2. Prepare Container
+    // 3. Prepare Container
     const actionContainerId = 'pod-action-container';
     let actionContainer = document.getElementById(actionContainerId);
     if (actionContainer) actionContainer.remove(); 
@@ -1618,7 +1637,7 @@ async function startPrintCheckout(blob) {
     masterCanvas.width = totalW;
     masterCanvas.height = totalH;
 
-    // --- 3. REPLICATE THE WORKING POC ---
+    // --- 4. REPLICATE THE WORKING POC ---
     
     // Create the <a> wrapper
     const peechoLink = document.createElement('a');
@@ -1626,24 +1645,23 @@ async function startPrintCheckout(blob) {
     peechoLink.className = "peecho-print-button";    
     
     // Set Data Attributes
-    peechoLink.setAttribute('data-src', signedUrl);       // WAS: rawUrl
-    peechoLink.setAttribute('data-thumbnail', signedUrl); // WAS: rawUrl
+    peechoLink.setAttribute('data-src', signedUrl);
+    peechoLink.setAttribute('data-thumbnail', signedUrl);
     peechoLink.setAttribute('data-filetype', 'image');
     peechoLink.setAttribute('data-width', masterCanvas.width);
     peechoLink.setAttribute('data-height', masterCanvas.height);
     peechoLink.setAttribute('data-pages', '1');
     peechoLink.setAttribute('data-reference', 'Strange Attractor #' + generateID());
 
-    // --- UPDATED BUTTON STYLE ---
+    // --- BUTTON STYLE ---
     const innerBtn = document.createElement('button');
-    innerBtn.innerText = "Review order options ↗️"; // New Text
+    innerBtn.innerText = "Review order options ↗️"; 
     
-    // Dark Technical Style to match UI
     innerBtn.style.backgroundColor = "#222";
-    innerBtn.style.color = "#fff"; // White text
+    innerBtn.style.color = "#fff"; 
     innerBtn.style.padding = "10px";
-    innerBtn.style.border = "1px solid #0f0"; // Green border to hint at "Order"
-    innerBtn.style.fontFamily = "monospace"; // Match panel font
+    innerBtn.style.border = "1px solid #0f0"; 
+    innerBtn.style.fontFamily = "monospace"; 
     innerBtn.style.fontSize = "12px";
     innerBtn.style.cursor = "pointer";
     innerBtn.style.width = "100%"; 
@@ -1657,7 +1675,7 @@ async function startPrintCheckout(blob) {
     if(footer) container.insertBefore(actionContainer, footer);
     else container.appendChild(actionContainer);
 
-    // --- 4. INJECT SCRIPT ---
+    // --- 5. INJECT SCRIPT ---
     const scriptId = 'peecho-sdk-script';
     if (!document.getElementById(scriptId)) {
         const script = document.createElement('script');
