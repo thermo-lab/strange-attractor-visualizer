@@ -16,7 +16,7 @@
    - FIXED: Slider Sync Glitch (Opacity now locked to GPU data)
    - UI UPDATE: Removed Invert Checkbox (Auto-switches based on Blend Mode)
    - FIXED: Additive Glow (Removed Tone Mapping to allow "blow out" effects)
-   - NEW: POD (Print on Demand) Integration via Peecho
+   - NEW: POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
 // ==========================================
@@ -25,9 +25,8 @@
 const MAX_ALLOCATION = 50000000; 
 
 // --- POD CONFIG ---
-const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec";
-
-const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL";
+const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
+const RECAPTCHA_SITE_KEY = "6Ld_N9AqAAAAAPu0_ZqC-gYk_h-vC_Xg_Xg_Xg_Xg"; // REPLACE WITH YOUR ACTUAL SITE KEY
 
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
@@ -49,12 +48,12 @@ let bgA = [0.9, 0.9, 0.9];
 let bgB = [1.0, 1.0, 1.0]; 
 let bgParams = [0.0, 0.5, 1.0]; 
 
-// High Quality Defaults
+// High Quality Defaults (UPDATED)
 let currentPhysicsSteps = 1000000; 
 let currentOpacity = 0.02;          
-let currentIntensity = 2.0;        
+let currentIntensity = 2.0;  // Default reduced to 20 (was 100)
 let currentGamma = 1.8;
-let currentNoise = 0.20; 
+let currentNoise = 0.05;     // Default reduced to 10 (was 20)
 let currentPointSize = 1.0;
 let currentDensity = 1;
 let currentJitter = 0.5;
@@ -78,9 +77,6 @@ let pendingResize = false; // Flag to trigger FBO update
 
 
 // ==========================================
-// 1. THE WORKER (TAIL ANALYSIS OPTIMIZATION)
-// ==========================================
-// ==========================================
 // 1. THE WORKER (INTERPOLATION ENGINE)
 // ==========================================
 const workerCode = `
@@ -100,7 +96,6 @@ const workerCode = `
     };
 
     // --- CATMULL-ROM SPLINE MATH ---
-    // Interpolates between p1 and p2 using p0 and p3 as control points/tangents
     function catmullRom(p0, p1, p2, p3, t) {
         const v0 = (p2 - p0) * 0.5;
         const v1 = (p3 - p1) * 0.5;
@@ -113,7 +108,6 @@ const workerCode = `
 
     function renderExisting(data) {
         const c = new Float32Array(data.coeffs);
-        // physicsSteps now = "Segments". density = "Points per Segment".
         const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType); 
         self.postMessage({
             type: 'found', 
@@ -147,7 +141,6 @@ const workerCode = `
             }
             
             if (checkChaosTail(coeffs, genType)) {
-                // Mining uses low density for speed (1 point per physics step)
                 const result = generateTrace(50000, 1, 0, coeffs, genType);
                 self.postMessage({
                     type: 'found', 
@@ -206,7 +199,6 @@ const workerCode = `
     }
 
     function checkChaosTail(c, genType) {
-        // [UNCHANGED - Keeping strict physics check for mining]
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else { x = 0.05; y = 0.05; z = 0.05; }
@@ -315,13 +307,7 @@ const workerCode = `
     }
 
     function generateTrace(physicsSteps, density, seedOffset, c, genType) {
-        // --- NEW STRATEGY: PHYSICS SKELETON + SPLINE INTERPOLATION ---
-        
-        const totalPoints = physicsSteps * density; // Total OUTPUT points
-        
-        // Safety: Limit memory to avoid browser crash (approx 10M point limit here for safety)
-        // If density is 50 and steps 2M, that's 100M points -> too big.
-        // We trust the user, but let's be aware.
+        const totalPoints = physicsSteps * density; 
         
         let posData = new Float32Array(totalPoints * 3);
         let metaData = new Float32Array(totalPoints * 2); 
@@ -331,8 +317,6 @@ const workerCode = `
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else { x = 0.05; y = 0.05; z = 0.05; }
 
-        // [CHANGE] FIXED DT. We do NOT divide by density anymore.
-        // This ensures the attractor shape stays constant regardless of smoothness.
         let dt = (genType === 'sym') ? 0.005 : 0.015;
 
         // Cache Coeffs
@@ -361,22 +345,12 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
 
-        // Ring buffer for the last 4 physics points: [p0, p1, p2, p3]
-        // We interpolate between p1 and p2.
         const history = []; 
-        // Helper to run physics one step
         function stepPhysics() {
             calcD(x, y, z, k1);
-            
-            // Calc meta data for the CURRENT point (Start of segment)
             let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
             let logVel = Math.log(speed + 1.0);
-            
-            // Curvature (approximate from previous step k1 vs current k1??)
-            // For speed, we'll just use a simple velocity magnitude check or 
-            // re-use previous calc. 
-            // Let's stick to velocity for now to keep interpolation fast.
-            let curv = 0; // Simplified for this interpolation engine
+            let curv = 0; 
             
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
             calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
@@ -387,64 +361,37 @@ const workerCode = `
             let nextZ = z + (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
             
             x = nextX; y = nextY; z = nextZ;
-            
             return { x:x, y:y, z:z, vel: logVel, curv: curv };
         }
 
-        // Warmup: Run and discard 2000 steps to get on track
         for(let i=0; i<2000; i++) stepPhysics();
-
-        // Prime the history buffer with 4 points
         for(let i=0; i<4; i++) history.push(stepPhysics());
 
         let outIdx = 0;
         let maxVel = 0;
 
-        // --- MAIN LOOP ---
         for(let i=0; i<physicsSteps; i++) {
-            
-            // Catmull-Rom Points: p0, p1, p2, p3
-            let p0 = history[0];
-            let p1 = history[1];
-            let p2 = history[2];
-            let p3 = history[3];
-            
-            // If any point is invalid (escaped to infinity), break
+            let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
             if (Math.abs(p2.x) > 1000 || isNaN(p2.x)) break;
 
-            // Generate 'density' points between p1 and p2
             for(let d=0; d<density; d++) {
                 if (outIdx >= totalPoints) break;
-                
-                let t = d / density; // 0.0 to 0.99...
-                
-                // Interpolate Position
+                let t = d / density; 
                 let px = catmullRom(p0.x, p1.x, p2.x, p3.x, t);
                 let py = catmullRom(p0.y, p1.y, p2.y, p3.y, t);
                 let pz = catmullRom(p0.z, p1.z, p2.z, p3.z, t);
                 
-                // Linear Interpolate Metadata (Good enough for visuals)
                 let pVel = p1.vel + (p2.vel - p1.vel) * t;
                 let pCurv = p1.curv + (p2.curv - p1.curv) * t;
-                
                 if (pVel > maxVel) maxVel = pVel;
 
-                posData[outIdx*3] = px;
-                posData[outIdx*3+1] = py;
-                posData[outIdx*3+2] = pz;
-                
-                metaData[outIdx*2] = pVel;
-                metaData[outIdx*2+1] = pCurv;
-                
+                posData[outIdx*3] = px; posData[outIdx*3+1] = py; posData[outIdx*3+2] = pz;
+                metaData[outIdx*2] = pVel; metaData[outIdx*2+1] = pCurv;
                 outIdx++;
             }
-
-            // Slide window: Remove p0, Add new point at end
-            history.shift();
-            history.push(stepPhysics());
+            history.shift(); history.push(stepPhysics());
         }
         
-        // Normalization & Centering
         if (maxVel > 0) {
             for(let i=0; i<totalPoints; i++) metaData[i*2] /= maxVel;
         }
@@ -482,7 +429,7 @@ if (!gl) {
 
 const floatExt = gl.getExtension("EXT_color_buffer_float");
 
-gaussianTex = createGaussianTexture(); // <--- GENERATE SPRITE
+gaussianTex = createGaussianTexture();
 
 const vsSource = `#version 300 es
 in vec3 a_position;
@@ -498,7 +445,6 @@ uniform vec4 u_tileBounds;
 uniform vec2 u_resolution; 
 uniform float u_jitter;     
 uniform float u_pointCount; 
-// uniform float u_density;  <-- REMOVED (Not needed without LOD)
 
 uniform float u_focusDist; 
 uniform float u_focusSpan; 
@@ -520,11 +466,9 @@ void main() {
     v_curv = a_curv;
     v_pos = a_position;
 
-    // --- 1. POSITION MATH ---
     vec4 rotated = u_rotation * vec4(a_position, 1.0);
     float dist = rotated.z; 
 
-    // Depth Smearing (Kept - Helps with DoF smoothness)
     float zNoise = (hash(float(gl_VertexID) + 77.7) - 0.5) * 0.04;
     float blurredDist = dist + zNoise;
 
@@ -537,38 +481,26 @@ void main() {
     
     gl_Position = vec4(tilePos * 2.0 - 1.0, 0.0, 1.0);
     
-    // --- 2. DOF SIZING ---
     float distFromFocus = abs(blurredDist - u_focusDist);
     float effectiveDist = max(0.0, distFromFocus - u_focusSpan);
 
-    // Quadratic Falloff (Kept - Looks natural)
     float rawBlur = (effectiveDist * effectiveDist) * (u_aperture * 0.1);
     
     float scaleFactor = u_resolution.y / 1080.0;
     float scaledBlur = rawBlur * scaleFactor;
-
-    // CAP SIZE (Crash Protection)
-    // We keep this. 400px is huge but safe.
     scaledBlur = clamp(scaledBlur, 0.0, 400.0 * scaleFactor);
 
     float baseSize = max(u_pointSize, 1.0);
     float targetSize = baseSize + scaledBlur;
     
-    // Size Dithering (Kept - Hides rounding artifacts)
     float rnd = hash(float(gl_VertexID) + 555.555);
     float sizeJitter = (rnd - 0.5) * (targetSize * 0.15); 
     
     gl_PointSize = max(1.0, targetSize + sizeJitter); 
     
-    // --- 3. ENERGY CONSERVATION ---
-    // We removed the LOD multiplier. 
-    // We stick to "Inverse Linear" (Bokeh Boost) because it looks best for art.
-    // If this is too bright, change to: areaRatio * areaRatio;
-    
     float areaRatio = baseSize / targetSize;
     v_attenuation = areaRatio; 
     
-    // --- 4. POSITION JITTER ---
     float jx = (hash(float(gl_VertexID)) - 0.5) * u_jitter;
     float jy = (hash(float(gl_VertexID) + 123.45) - 0.5) * u_jitter;
     vec2 pixelSize = 2.0 / u_resolution; 
@@ -584,7 +516,7 @@ in float v_time;
 in vec3 v_pos;
 in float v_attenuation; 
 
-uniform sampler2D u_sprite; // <--- The optimization texture
+uniform sampler2D u_sprite; 
 uniform int u_colorMode;
 uniform vec3 u_colorSeed; 
 uniform float u_opacity;
@@ -602,28 +534,17 @@ vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
 }
 
 void main() {
-    // --- OPTIMIZED SPRITE LOGIC ---
-    // Instead of calculating exp() math, we read the texture.
-    // gl_PointCoord is 0.0 to 1.0 across the particle.
-    // We read the Alpha (.a) from our Gaussian sprite.
     float shapeAlpha = texture(u_sprite, gl_PointCoord).a;
-    
-    // Discard invisible pixels to save fill-rate.
-    // Since we use a texture, we don't need 'distSq' math anymore.
     if (shapeAlpha < 0.01) discard; 
 
-    // --- COLOR LOGIC ---
     float val = 0.0;
     if (u_colorMode == 0) val = pow(v_vel, 0.5); 
-    else if (u_colorMode == 1) val = v_time; 
     else if (u_colorMode == 2) val = pow(v_curv, 0.5); 
     else if (u_colorMode == 3) {
         vec3 p = v_pos + (u_colorSeed * 10.0);
         float pattern = sin(p.x * 5.0) + cos(p.y * 5.0) + sin(p.z * 5.0);
         val = 0.5 + (pattern * 0.25);
-    } else {
-        val = v_time * 2.0; 
-    }
+    } 
     val = clamp(val, 0.0, 1.0);
     
     vec3 phaseDrift = vec3(sin(v_time*3.0), cos(v_time*5.0), sin(v_time*7.0)) * (u_variation*0.2); 
@@ -631,7 +552,6 @@ void main() {
 
     vec3 rgb;
     if (u_colorMode == 0) rgb = palette(val, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67) + phaseShift);
-    else if (u_colorMode == 1) rgb = palette(val, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.10, 0.20) + phaseShift);
     else if (u_colorMode == 2) rgb = palette(val, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.8, 0.8, 0.5) + phaseShift);
     else if (u_colorMode == 3) rgb = palette(val, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.10, 0.20) + phaseShift);
     else rgb = palette(val, vec3(0.3), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67) + phaseShift);
@@ -647,10 +567,7 @@ void main() {
         rgb = pow(rgb, vec3(1.5)); 
     }
 
-    // --- APPLY OPACITY ---
-    // Combine the Sprite Alpha with the User Opacity and Physics Attenuation
     float finalOpac = u_opacity * v_attenuation * shapeAlpha;
-    
     outColor = vec4(rgb * u_intensity * finalOpac, finalOpac); 
 }`;
 
@@ -713,7 +630,7 @@ uniform int u_invert;
 uniform int u_inc_black;
 uniform int u_inc_white;
 uniform int u_blend_mode; 
-uniform float u_scale; // <--- NEW UNIFORM
+uniform float u_scale; 
 
 uniform int u_show_guide;
 uniform float u_print_aspect; 
@@ -733,8 +650,6 @@ float triangularNoise(vec2 uv) {
 }
 
 void main() { 
-    // 1. GLOBAL UV (For Backgrounds)
-    // This stays relative to the TOTAL image (0..1)
     vec2 globalUV = (gl_FragCoord.xy + u_off) / u_res;
     float aspect = u_res.x / u_res.y;
     
@@ -745,19 +660,12 @@ void main() {
     
     bg += (hash(gl_FragCoord.xy)-0.5) * (u_noise*0.05);
 
-    // 2. LOCAL FETCH (For Particles)
-    // We go back to texelFetch (Integer lookup), but we apply the Render Scale.
-    // If we are in "Fast Mode" (0.5 scale), screen pixel 100 -> texture pixel 50.
-    // If we are in "Export Mode" (1.0 scale), tile pixel 100 -> texture pixel 100.
-    
     ivec2 texCoord = ivec2(gl_FragCoord.xy * u_scale);
     vec4 pVal = texelFetch(u_tex, texCoord, 0) / u_passes;
 
     vec3 color = pVal.rgb;
     vec3 energy = color;
 
-    // ... (Tone Mapping & Color Logic Unchanged) ...
-    // Tone Mapping
     if (u_blend_mode == 0) { 
         float luma = length(color);
         float tone = 1.0 - exp(-luma * 1.0); 
@@ -801,8 +709,6 @@ function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
-    
-    // ERROR CHECKING
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
         console.error("SHADER COMPILE ERROR:", gl.getShaderInfoLog(shader));
         gl.deleteShader(shader);
@@ -811,36 +717,30 @@ function createShader(gl, type, source) {
     return shader;
 }
 
-// --- OPTIMIZATION: PRE-CALCULATED GAUSSIAN SPRITE ---
-// Instead of running expensive math for every pixel of every particle,
-// we look up the brightness in this tiny texture.
 function createGaussianTexture() {
-    const size = 64; // 64x64 is plenty for a smooth gradient
+    const size = 64; 
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    // Draw a radial gradient (white center, black edge)
     const cx = size / 2;
     const cy = size / 2;
     const radius = size / 2;
     
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); // Center
-    grad.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)'); // Core falloff
-    grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)'); // Mid falloff
-    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');       // Edge
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); 
+    grad.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
+    grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
 
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, size, size);
 
-    // Upload to WebGL
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
     
-    // Linear filtering gives us "free" interpolation between the 64 pixels
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -860,7 +760,6 @@ function createProgram(gl, vs, fs) {
 const particleProgram = createProgram(gl, vsSource, fsSource);
 const bgProgram = createProgram(gl, bgVsSource, bgFsSource);
 const compositeProgram = createProgram(gl, compositeVsSource, compositeFsSource);
-
 
 // --- BUFFERS ---
 const vao = gl.createVertexArray();
@@ -891,18 +790,11 @@ function resizeViewportFBO() {
     viewFbo = gl.createFramebuffer();
     viewTex = gl.createTexture();
     
-    // 1. CALCULATE SCALED DIMENSIONS
-    // If renderScale is 0.5, we create a texture half the size of the screen.
     const w = Math.floor(canvas.width * renderScale);
     const h = Math.floor(canvas.height * renderScale);
 
     gl.bindTexture(gl.TEXTURE_2D, viewTex);
-    
-    // 2. USE RGBA16F (Safe & Compatible)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    
-    // 3. USE LINEAR FILTERING
-    // Essential for Dynamic Res so the 0.5 scale image looks "soft" not "blocky"
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -910,12 +802,6 @@ function resizeViewportFBO() {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, viewFbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, viewTex, 0);
-    
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-        uiStatus.innerText = "FBO Error: " + status;
-        uiStatus.style.color = "red";
-    }
     
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
@@ -953,9 +839,9 @@ function generateID() {
 
 function serializeState() {
     return {
-        id: generateID(), // Generate new ID on save
+        id: generateID(),
         timestamp: Date.now(),
-        genType: currentGenType, // SAVE GENERATOR TYPE
+        genType: currentGenType,
         camera: { zoom: camZoom, panX: camPanX, panY: camPanY, quat: Array.from(currentQuat) },
         colors: { 
             mode: colorMode, 
@@ -981,6 +867,12 @@ function serializeState() {
             focus: document.getElementById('ui-focus').value,
             aperture: document.getElementById('ui-aperture').value,
             span: document.getElementById('ui-focus-span').value
+        },
+        export: {
+            width: document.getElementById('ui-print-w').value,
+            height: document.getElementById('ui-print-h').value,
+            dpi: document.getElementById('ui-print-dpi').value,
+            passes: document.getElementById('ui-print-passes').value
         }
     };
 }
@@ -988,7 +880,6 @@ function serializeState() {
 function applyState(data) {
     if (!data) return;
     
-    // Apply Settings
     if (data.settings) {
         const s = data.settings;
         
@@ -1007,26 +898,22 @@ function applyState(data) {
             currentPointSize = s.render.size; currentJitter = s.render.jitter;
             currentVariation = s.render.variation || 0;
         }
-
-        // --- NEW: LOAD DOF SETTINGS ---
-        // If the file has DoF data, use it. Otherwise reset to 0 (default).
         if (s.dof) {
             document.getElementById('ui-focus').value = s.dof.focus || 0;
             document.getElementById('ui-aperture').value = s.dof.aperture || 0;
             document.getElementById('ui-focus-span').value = s.dof.span || 0;
-        } else {
-            // Legacy file support: Reset DoF so it doesn't get stuck on previous settings
-            document.getElementById('ui-focus').value = 0;
-            document.getElementById('ui-aperture').value = 0;
-            document.getElementById('ui-focus-span').value = 0;
+        }
+        if (s.export) {
+            document.getElementById('ui-print-w').value = s.export.width || 24;
+            document.getElementById('ui-print-h').value = s.export.height || 36;
+            document.getElementById('ui-print-dpi').value = s.export.dpi || 300;
+            document.getElementById('ui-print-passes').value = s.export.passes || 1;
         }
 
     } else {
-        // Legacy file (reset camera)
         camZoom = 2.0; camPanX=0; camPanY=0; currentQuat=qIdentity();
     }
     
-    // Update UI Elements to match state
     selectGenType.value = currentGenType;
     selectBlend.value = blendMode;
     selectColor.value = colorMode;
@@ -1035,7 +922,6 @@ function applyState(data) {
     inputBg1.value = rgbToHex(bgA[0],bgA[1],bgA[2]);
     inputBg2.value = rgbToHex(bgB[0],bgB[1],bgB[2]);
     
-    // Force UI sliders to match the loaded values visually
     sliderLength.value = currentPhysicsSteps;
     sliderDensity.value = currentDensity;
     sliderOpacity.value = currentOpacity * 1000;
@@ -1043,7 +929,6 @@ function applyState(data) {
     sliderSize.value = currentPointSize * 10;
     sliderGamma.value = currentGamma * 10;
     sliderJitter.value = currentJitter * 10;
-    sliderGamma.value = currentGamma * 10;
     sliderSmooth.value = currentNoise * 200;
     sliderVariation.value = currentVariation * 100;
 }
@@ -1116,15 +1001,12 @@ div.appendChild(createSection("APPEARANCE", `
     <select id="ui-blend-mode" style="width:100%; margin-bottom:10px;">
         <option value="NORMAL">Normal (Paint)</option>
         <option value="ADD">Additive (Glow)</option>
-        <option value="SOFT">Soft (Dye)</option>
     </select>
     <div style="color:#0f0; margin-bottom:5px;">COLOR MODE</div>
     <select id="ui-color-mode" style="width:100%; margin-bottom:10px;">
         <option value="0">Velocity (Magma)</option>
-        <option value="1">Time (Rainbow)</option>
         <option value="2">Curvature (Electric)</option>
         <option value="3">Spatial (Marble)</option>
-        <option value="4">Ink (Spectral)</option>
     </select>
     <div style="display:flex; gap:10px; margin-bottom:10px; color:#fff;">
         <label><input type="checkbox" id="ui-inc-black" checked> Black</label>
@@ -1145,7 +1027,7 @@ div.appendChild(createSection("APPEARANCE", `
 
 div.appendChild(createSection("ADJUSTMENT", `
     <div style="color:#0f0; margin-bottom:5px;">INTENSITY (Color)</div>
-    <input type="range" id="ui-intensity" min="0" max="150" value="100" style="width:100%;">
+    <input type="range" id="ui-intensity" min="0" max="150" value="20" style="width:100%;">
     
     <div style="color:#0f0; margin-bottom:5px;">OPACITY (Alpha)</div>
     <input type="range" id="ui-opacity" min="1" max="300" value="20" style="width:100%;">
@@ -1157,7 +1039,7 @@ div.appendChild(createSection("ADJUSTMENT", `
     <div style="color:#0f0; margin-bottom:5px;">JITTER (Anti-Alias)</div>
     <input type="range" id="ui-jitter" min="0" max="20" value="5" style="width:100%;">
     <div style="color:#0f0; margin-bottom:5px;">DEBAND (Dither)</div>
-    <input type="range" id="ui-deband" min="0" max="100" value="20" style="width:100%;">
+    <input type="range" id="ui-deband" min="0" max="100" value="10" style="width:100%;">
     <div style="color:#0f0; margin-top:10px; border-top:1px solid #444; padding-top:5px;">DEPTH OF FIELD</div>
     <div style="display:flex; gap:5px; margin-bottom:5px;">
         <span style="color:#aaa; font-size:10px; width:40px; padding-top:4px;">FOCUS</span>
@@ -1178,16 +1060,30 @@ div.appendChild(createSection("EXPORT", `
         <input type="checkbox" id="ui-show-guide"> Show Print Crop Guide
     </label>
 
-    <div style="display:flex; gap:5px; margin-bottom:5px;">
-        <input type="number" id="ui-print-w" value="24" style="width:40%" placeholder="W">
-        <span style="color:#0f0; padding-top:4px;">in</span>
-        <input type="number" id="ui-print-h" value="36" style="width:40%" placeholder="H">
-    </div>
+    <div style="margin-bottom:5px; font-size:12px; color:#aaa;">Dimensions (Inches)</div>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
-        <input type="number" id="ui-print-dpi" value="300" style="width:40%" placeholder="DPI">
-        <span style="color:#0f0; padding-top:4px;">DPI</span>
-        <input type="number" id="ui-print-passes" value="30" style="width:40%" placeholder="Passes">
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">Width</span>
+            <input type="number" id="ui-print-w" value="24" style="width:100%" placeholder="W">
+        </div>
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">Height</span>
+            <input type="number" id="ui-print-h" value="36" style="width:100%" placeholder="H">
+        </div>
     </div>
+
+    <div style="margin-bottom:5px; font-size:12px; color:#aaa;">Quality</div>
+    <div style="display:flex; gap:5px; margin-bottom:10px;">
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">DPI</span>
+            <input type="number" id="ui-print-dpi" value="300" style="width:100%" placeholder="300">
+        </div>
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">Passes</span>
+            <input type="number" id="ui-print-passes" value="1" style="width:100%" placeholder="1">
+        </div>
+    </div>
+
     <button id="ui-btn-snap" style="width:100%; background:#fff; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold; margin-bottom:5px;">📸 SNAPSHOT</button>
     <button id="ui-btn-order" style="width:100%; background:#0f0; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold;">🛒 ORDER PRINT</button>
     <div id="ui-export-status" style="color:#fff; font-size:10px; margin-top:5px; text-align:center;"></div>
@@ -1214,7 +1110,6 @@ const inputBg2 = document.getElementById('ui-bg-color-2');
 const btnRerollBg = document.getElementById('ui-btn-reroll-bg');
 const selectBlend = document.getElementById('ui-blend-mode'); 
 const selectColor = document.getElementById('ui-color-mode');
-// REMOVED CHECK INVERT
 const checkIncBlack = document.getElementById('ui-inc-black');
 const checkIncWhite = document.getElementById('ui-inc-white');
 const btnColor = document.getElementById('ui-btn-color');
@@ -1247,28 +1142,15 @@ inputBg1.oninput = (e) => { bgA = hexToRgb(e.target.value); };
 inputBg2.oninput = (e) => { bgB = hexToRgb(e.target.value); };
 btnRerollBg.onclick = () => {
     if (blendMode === 'ADD') {
-        // --- DARK SATURATED MODE (For Glow) ---
-        // Pick a dominant channel for saturation
         const dominant = Math.floor(Math.random() * 3); 
-        
-        // Base intensity for the deep color (0.1 to 0.25 is "Dark" but visible)
         const intensity = 0.1 + Math.random() * 0.15; 
-        
         const c = [0, 0, 0];
-        c[dominant] = intensity; // Set dominant channel
-        
-        // Add a little bit to the other channels so it's not purely primary (more complex color)
-        // but keep them low to maintain saturation.
+        c[dominant] = intensity; 
         c[(dominant + 1) % 3] = Math.random() * (intensity * 0.3);
         c[(dominant + 2) % 3] = Math.random() * (intensity * 0.3);
-        
-        bgA = c; // Center color (Deep Hue)
-        
-        // Outer color: Fade to almost black (Vignette feel)
+        bgA = c; 
         bgB = [0.02, 0.02, 0.02]; 
-        
     } else {
-        // --- LIGHT MODE (Original Logic) ---
         const val = 0.8 + Math.random() * 0.2; 
         bgA = [val, val, val]; 
         const r = val - (Math.random() * 0.1);
@@ -1277,7 +1159,6 @@ btnRerollBg.onclick = () => {
         bgB = [r,g,b];
     }
 
-    // Update Inputs & Params
     inputBg1.value = rgbToHex(bgA[0], bgA[1], bgA[2]);
     inputBg2.value = rgbToHex(bgB[0], bgB[1], bgB[2]);
     bgParams[0] = Math.random() * 6.28; 
@@ -1286,7 +1167,6 @@ btnRerollBg.onclick = () => {
 };
 selectBlend.onchange = (e) => { 
     blendMode = e.target.value; 
-    // AUTO-SET INVERT: Paint=True, Glow/Dye=False
     isInverted = (blendMode === 'NORMAL');
 }; 
 selectColor.onchange = (e) => { colorMode = parseInt(e.target.value); };
@@ -1318,7 +1198,6 @@ btnMutate.onclick = () => {
     worker.postMessage({ type: 'mutate', coeffs: currentCoeffs, genType: currentGenType });
 };
 
-// UPDATED SAVE: Now includes settings & ID
 btnSave.onclick = () => { 
     if (!currentCoeffs) return; 
     const meta = serializeState();
@@ -1331,7 +1210,6 @@ btnSave.onclick = () => {
     document.body.appendChild(a); a.click(); document.body.removeChild(a); 
 };
 
-// UPDATED LOAD: Now applies settings
 btnLoad.onclick = () => fileInput.click();
 fileInput.onchange = (e) => { 
     const r = new FileReader(); 
@@ -1486,22 +1364,12 @@ window.onmousemove = (e) => {
 
 canvas.onwheel = (e) => {
     isInteracting = true;
-
-    // Debounce: Reset to false 200ms after scrolling stops
     clearTimeout(window.scrollTimeout);
     window.scrollTimeout = setTimeout(() => { isInteracting = false; }, 200);
-  
     if(isExporting) return;
     e.preventDefault();
-
-    // Use multiplicative zoom for fine-grained control at any scale.
-    // e.deltaY is usually +/- 100 for a mouse wheel notch.
-    // 1.0005 ^ 100 ≈ 1.05 (5% change per notch), which is smooth but responsive.
     const factor = Math.pow(1.00025, -e.deltaY);
-    
     camZoom *= factor;
-    
-    // Cap the minimum zoom to prevent inverting or getting stuck
     camZoom = Math.max(0.01, camZoom); 
 };
 
@@ -1509,7 +1377,7 @@ canvas.onwheel = (e) => {
 // 5. EXPORT & WORKER INITIALIZATION (FINAL)
 // ==========================================
 const blob = new Blob([workerCode], { type: 'application/javascript' });
-worker = new Worker(URL.createObjectURL(blob)); // Assigned to top-level var
+worker = new Worker(URL.createObjectURL(blob)); 
 
 worker.onerror = function(e) {
     uiStatus.innerText = "Worker Error: " + e.message;
@@ -1530,8 +1398,6 @@ worker.onmessage = (e) => {
         gl.bufferData(gl.ARRAY_BUFFER, meta, gl.STATIC_DRAW);
         pointCount = data.length / 3;
         
-        // [FIX] Sync GPU density to prevent slider glitch
-        // If density wasn't passed (legacy), default to 1.0
         gpuRenderedDensity = e.data.density || 1.0; 
 
         if (isExporting && exportResolve) {
@@ -1548,7 +1414,6 @@ worker.onmessage = (e) => {
             camPanX = 0; camPanY = 0; camZoom = 2.0; 
             currentQuat = qIdentity();
             
-            // [FIX] Auto-refresh to full quality immediately
             uiStatus.innerText = "Refining...";
             worker.postMessage({ 
                 type: 'render', 
@@ -1563,7 +1428,6 @@ worker.onmessage = (e) => {
 
 let exportResolve = null;
 
-// --- UPDATED POD FUNCTION WITH RECAPTCHA ---
 async function startPrintCheckout(blob) {
   const uiExport = document.getElementById('ui-export-status');
   const container = document.getElementById('colorControls');
@@ -1573,7 +1437,6 @@ async function startPrintCheckout(blob) {
       return;
   }
 
-  // Check if reCAPTCHA is loaded
   if (typeof grecaptcha === 'undefined') {
       uiExport.innerText = "Error: reCAPTCHA not loaded. Refresh page.";
       return;
@@ -1584,8 +1447,6 @@ async function startPrintCheckout(blob) {
   allButtons.forEach(b => b.disabled = true);
 
   try {
-    // 1. GET FRESH RECAPTCHA TOKEN
-    // We do this here (not on click) so the token is fresh even if rendering took 5 mins.
     const token = await new Promise((resolve) => {
         grecaptcha.ready(() => {
             grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: 'print_order'}).then(resolve);
@@ -1594,8 +1455,6 @@ async function startPrintCheckout(blob) {
 
     uiExport.innerText = "⏳ Requesting Cloud Storage...";
 
-    // 2. Upload Sequence (Pass token in URL)
-    // We append the token as a query parameter
     const authResp = await fetch(POD_API_URL + "?recaptcha_token=" + token);
     const authData = await authResp.json();
     
@@ -1610,12 +1469,10 @@ async function startPrintCheckout(blob) {
 
     if (!uploadResp.ok) throw new Error("Upload failed: " + uploadResp.statusText);
 
-    // We MUST keep the ?Signature=... part
     const signedUrl = authData.publicUrl;
     
     uiExport.innerText = "✅ Ready.";
 
-    // 3. Prepare Container
     const actionContainerId = 'pod-action-container';
     let actionContainer = document.getElementById(actionContainerId);
     if (actionContainer) actionContainer.remove(); 
@@ -1625,6 +1482,7 @@ async function startPrintCheckout(blob) {
     actionContainer.style.marginTop = "10px";
     actionContainer.style.borderTop = "1px solid #555";
     actionContainer.style.paddingTop = "10px";
+    actionContainer.style.margin = "0 10px 10px 10px"; 
 
     const inchesW = parseFloat(inpW.value);
     const inchesH = parseFloat(inpH.value);
@@ -1637,14 +1495,11 @@ async function startPrintCheckout(blob) {
     masterCanvas.width = totalW;
     masterCanvas.height = totalH;
 
-    // --- 4. REPLICATE THE WORKING POC ---
-    
-    // Create the <a> wrapper
     const peechoLink = document.createElement('a');
     peechoLink.href = "https://www.peecho.com"; 
+    peechoLink.target = "_blank"; 
+
     peechoLink.className = "peecho-print-button";    
-    
-    // Set Data Attributes
     peechoLink.setAttribute('data-src', signedUrl);
     peechoLink.setAttribute('data-thumbnail', signedUrl);
     peechoLink.setAttribute('data-filetype', 'image');
@@ -1653,7 +1508,6 @@ async function startPrintCheckout(blob) {
     peechoLink.setAttribute('data-pages', '1');
     peechoLink.setAttribute('data-reference', 'Strange Attractor #' + generateID());
 
-    // --- BUTTON STYLE ---
     const innerBtn = document.createElement('button');
     innerBtn.innerText = "Review order options ↗️"; 
     
@@ -1670,12 +1524,10 @@ async function startPrintCheckout(blob) {
     peechoLink.appendChild(innerBtn);
     actionContainer.appendChild(peechoLink);
 
-    // Insert into DOM
     const footer = document.getElementById('ui-main-status')?.parentNode;
     if(footer) container.insertBefore(actionContainer, footer);
     else container.appendChild(actionContainer);
 
-    // --- 5. INJECT SCRIPT ---
     const scriptId = 'peecho-sdk-script';
     if (!document.getElementById(scriptId)) {
         const script = document.createElement('script');
@@ -1689,7 +1541,6 @@ async function startPrintCheckout(blob) {
         }
     }
 
-    // Re-enable buttons
     allButtons.forEach(b => b.disabled = false);
 
   } catch (err) {
@@ -1699,11 +1550,7 @@ async function startPrintCheckout(blob) {
   }
 }
 
-// ADDED: overridePanX argument
-// ADDED: overridePanX argument
 function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jitter, overridePanX) {
-    // --- A. BIND OPTIMIZED GAUSSIAN SPRITE ---
-    // (Must bind this for exports too!)
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
     gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
@@ -1725,17 +1572,14 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
     gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_white"), 1); 
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_variation"), currentVariation); 
 
-    // --- DoF Settings ---
     const focusVal = (parseInt(document.getElementById('ui-focus').value) / 1000.0); 
     const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) / 1000.0);
-    const apertureVal = parseInt(document.getElementById('ui-aperture').value); // No divider (0-1000)
+    const apertureVal = parseInt(document.getElementById('ui-aperture').value); 
 
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusDist"), focusVal);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-    // --- Opacity Math (Export) ---
-    // For export, we use currentDensity because the worker just re-simulated it.
     let targetOpacity = opac / currentDensity;
     let safeOpacity = Math.max(targetOpacity, 0.000001); 
     
@@ -1754,7 +1598,6 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
     if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
 }
 
-// UPDATED EXPORT FUNCTION: Handles both Download and POD
 async function startTiledExport(mode = 'download') {
     if (isExporting || !currentCoeffs) return;
     isExporting = true;
@@ -1781,7 +1624,6 @@ async function startTiledExport(mode = 'download') {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    // MOBILE FIX: Use 16F here as well
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, TILE_SIZE+PADDING*2, TILE_SIZE+PADDING*2, 0, gl.RGBA, gl.HALF_FLOAT, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -1801,17 +1643,12 @@ async function startTiledExport(mode = 'download') {
     const exportPhysics = currentPhysicsSteps;
     const resolutionRatio = totalH / canvas.height;
     
-    // [FIX] Pass RAW opacity. renderTileParticles will divide by density.
     const exportOpacity = currentOpacity * resolutionRatio; 
     const exportJitter = currentJitter * resolutionRatio;
 
-    // --- FIX: ASPECT RATIO PAN COMPENSATION ---
-    // If the attractor is off-center and the user panned to fix it,
-    // we must scale that pan amount to match the new aspect ratio.
     const screenAspect = canvas.width / canvas.height;
     const printAspect = totalW / totalH;
     
-    // Generate ID for this export
     const meta = serializeState(); 
     const exportID = meta.id;
 
@@ -1831,7 +1668,6 @@ async function startTiledExport(mode = 'download') {
             const tileW = drawW + padLeft + padRight;
             const tileH = drawH + padTop + padBottom;
             
-            // 1. RENDER TO FLOAT FBO
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
             gl.viewport(0, 0, tileW, tileH);
             gl.clearColor(0,0,0,0);
@@ -1849,7 +1685,6 @@ async function startTiledExport(mode = 'download') {
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.ONE, gl.ONE); 
 
-            // Bind Sprite Texture
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, gaussianTex);
             gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
@@ -1870,7 +1705,6 @@ async function startTiledExport(mode = 'download') {
                 renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter);
             }
             
-            // 2. COMPOSITE TO RESOLVE FBO
             gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
             gl.viewport(0, 0, tileW, tileH);
             
@@ -1891,21 +1725,18 @@ async function startTiledExport(mode = 'download') {
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_invert"), isInverted?1:0);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_black"), incBlack?1:0);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_white"), incWhite?1:0);
-            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), 1.0); // <--- FORCE 1.0 FOR TILES
+            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), 1.0); 
             
             let bMode = 0;
             if (blendMode === 'ADD') bMode = 1;
-            else if (blendMode === 'SOFT') bMode = 2;
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
 
             gl.drawArrays(gl.TRIANGLES, 0, 3);
             
-            // 3. READ PIXELS
             const pixels = new Uint8Array(tileW * tileH * 4);
             gl.bindFramebuffer(gl.READ_FRAMEBUFFER, resolveFbo);
             gl.readPixels(0, 0, tileW, tileH, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
             
-            // 4. FLIP Y
             const flipped = new Uint8ClampedArray(tileW * tileH * 4);
             const rowBytes = tileW * 4;
             for (let r = 0; r < tileH; r++) {
@@ -1914,7 +1745,6 @@ async function startTiledExport(mode = 'download') {
                 flipped.set(srcRow, dstOffset);
             }
             
-            // 5. PAINT
             const imgData = new ImageData(flipped, tileW, tileH);
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = tileW; 
@@ -1930,7 +1760,6 @@ async function startTiledExport(mode = 'download') {
     gl.deleteTexture(tex);
     gl.deleteTexture(resolveTex);
     
-    // --- BRANCH: DOWNLOAD OR POD ---
     if (mode === 'download') {
         uiExport.innerText = "Saving to disk...";
         masterCanvas.toBlob((blob) => {
@@ -1939,7 +1768,6 @@ async function startTiledExport(mode = 'download') {
             a.href = url; a.download = `attractor_${exportID}_${inchesW}x${inchesH}in_${dpi}dpi.png`; 
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             
-            // AUTO-SAVE MATCHING JSON
             const data = { coeffs: Array.from(currentCoeffs), settings: meta };
             const jsonBlob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
             const jUrl = URL.createObjectURL(jsonBlob);
@@ -1953,7 +1781,6 @@ async function startTiledExport(mode = 'download') {
     } else if (mode === 'pod') {
         uiExport.innerText = "Preparing Upload...";
         masterCanvas.toBlob((blob) => {
-             // Pass the blob to the POD function, DO NOT reset state yet (the async upload handles that)
              startPrintCheckout(blob);
         }, 'image/png');
     }
@@ -1968,24 +1795,16 @@ function resetRenderState() {
 }
 
 function renderFrame() {
-    // --- A. DYNAMIC RESOLUTION LOGIC ---
-    // If dragging/interacting, drop to 50% scale (4x faster).
-    // If idle, snap to 100% scale (Crisp).
     const targetScale = isInteracting ? 0.5 : 1.0;
     
-    // Only resize if the target scale changed
     if (renderScale !== targetScale) {
         renderScale = targetScale;
         resizeViewportFBO();
     }
     
-    // Safety check
     if (!viewFbo) resizeViewportFBO();
 
-    // --- B. RENDER PARTICLES TO FBO ---
     gl.bindFramebuffer(gl.FRAMEBUFFER, viewFbo);
-    
-    // Important: Viewport matches the FBO size (e.g. 500x500), NOT the screen size (1000x1000)
     gl.viewport(0, 0, Math.floor(canvas.width * renderScale), Math.floor(canvas.height * renderScale));
     
     try {
@@ -1996,12 +1815,10 @@ function renderFrame() {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE);
         
-        // --- C. BIND OPTIMIZED GAUSSIAN SPRITE ---
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, gaussianTex); // <--- The generated sprite
+        gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
         gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
         
-        // --- D. UNIFORMS ---
         const rotMatrix = qToMatrix(currentQuat);
         gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
         gl.uniform2f(gl.getUniformLocation(particleProgram, "u_pan"), camPanX, camPanY);
@@ -2016,16 +1833,14 @@ function renderFrame() {
         gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_white"), 1); 
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_variation"), currentVariation); 
 
-        // --- DoF Settings ---
         const focusVal = (parseInt(document.getElementById('ui-focus').value) / 1000.0); 
         const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) / 1000.0);
-        const apertureVal = parseInt(document.getElementById('ui-aperture').value); // No divider (0-1000)
+        const apertureVal = parseInt(document.getElementById('ui-aperture').value); 
 
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusDist"), focusVal);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-        // Opacity Math (Live View uses gpuRenderedDensity)
         let targetOpacity = currentOpacity / gpuRenderedDensity;
         let safeOpacity = Math.max(targetOpacity, 0.000001); 
         
@@ -2041,9 +1856,8 @@ function renderFrame() {
 
         if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
 
-        // --- E. COMPOSITE TO SCREEN ---
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, canvas.width, canvas.height); // Back to full screen size
+        gl.viewport(0, 0, canvas.width, canvas.height); 
         
         gl.useProgram(compositeProgram);
         gl.disable(gl.BLEND); 
@@ -2052,8 +1866,6 @@ function renderFrame() {
         gl.bindTexture(gl.TEXTURE_2D, viewTex);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_tex"), 0);
         
-        // PASS THE DYNAMIC SCALE
-        // This tells the shader: "The texture is only 50% size, please stretch it"
         gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), renderScale); 
 
         gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_passes"), 1.0); 
@@ -2070,7 +1882,6 @@ function renderFrame() {
         
         let bMode = 0;
         if (blendMode === 'ADD') bMode = 1;
-        else if (blendMode === 'SOFT') bMode = 2;
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
 
         const checkGuide = document.getElementById('ui-show-guide');
