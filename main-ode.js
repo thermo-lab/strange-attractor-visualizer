@@ -26,7 +26,7 @@ const MAX_ALLOCATION = 50000000;
 
 // --- POD CONFIG ---
 const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
-const RECAPTCHA_SITE_KEY = "6Ld_N9AqAAAAAPu0_ZqC-gYk_h-vC_Xg_Xg_Xg_Xg"; // REPLACE WITH YOUR ACTUAL SITE KEY
+const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; // REPLACE WITH YOUR ACTUAL SITE KEY
 
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
