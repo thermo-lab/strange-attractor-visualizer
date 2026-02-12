@@ -1716,7 +1716,7 @@ async function startTiledExport(mode = 'download') {
     const exportPhysics = currentPhysicsSteps;
     const resolutionRatio = totalH / canvas.height;
     
-    const exportOpacity = currentOpacity * resolutionRatio; 
+    const exportOpacity = currentOpacity; 
     const exportJitter = currentJitter * resolutionRatio;
 
     const screenAspect = canvas.width / canvas.height;
