@@ -17,6 +17,7 @@
    - UI UPDATE: Removed Invert Checkbox (Auto-switches based on Blend Mode)
    - FIXED: Additive Glow (Removed Tone Mapping to allow "blow out" effects)
    - NEW: POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
+   - NEW: Export Unit Toggle (Inches vs Pixels)
 */
 
 // ==========================================
@@ -26,7 +27,7 @@ const MAX_ALLOCATION = 50000000;
 
 // --- POD CONFIG ---
 const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
-const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; // <--- UPDATED KEY
+const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; 
 
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
@@ -39,17 +40,15 @@ let currentQuat = [0, 0, 0, 1];
 let currentCoeffs = null;
 let currentGenType = 'poly';
 let colorMode = 0;
-
-// [RESTORED MISSING VARIABLE]
 let colorSeed = [0.0, 0.0, 0.0];
 
-// [CHANGED] Defaults for Glow Mode
+// [UPDATED] Defaults for Glow Mode
 let blendMode = 'ADD';       // Default to Glow
 let isInverted = false;      // Default to Dark Background (False = Dark)
 let incBlack = true;
 let incWhite = true;
 
-// [CHANGED] Default Background to Dark/Black
+// [UPDATED] Default Background to Dark/Black
 let bgA = [0.0, 0.0, 0.0];   // Pure Black Center
 let bgB = [0.1, 0.1, 0.1];   // Dark Gray Corners (Vignette)
 let bgParams = [0.0, 0.5, 1.0]; 
@@ -57,14 +56,17 @@ let bgParams = [0.0, 0.5, 1.0];
 // High Quality Defaults
 let currentPhysicsSteps = 1000000; 
 let currentOpacity = 0.02;          
-let currentIntensity = 2.0;  
+let currentIntensity = 2.0;  // Default reduced to 20% (slider 20)
 let currentGamma = 1.8;
-let currentNoise = 0.05;     
+let currentNoise = 0.05;     // Default reduced to 50% (slider 10)
 let currentPointSize = 1.0;
 let currentDensity = 1;
 let currentJitter = 0.5;
 let currentVariation = 0.0;
 let isExporting = false; 
+
+// [NEW] Export Unit State
+let exportUnit = 'inches'; // 'inches' or 'pixels'
 
 // --- VIEWPORT FBO REFS ---
 let viewFbo = null;
@@ -80,6 +82,7 @@ let lastAngle = 0;
 let renderScale = 1.0;     // Current resolution scale (1.0 = Full, 0.5 = Half)
 let isInteracting = false; // Are we currently touching/dragging?
 let pendingResize = false; // Flag to trigger FBO update
+
 
 // ==========================================
 // 1. THE WORKER (INTERPOLATION ENGINE)
@@ -211,120 +214,6 @@ const workerCode = `
         let sx = x + 0.000001, sy = y, sz = z;
         let dt = (genType === 'sym') ? 0.01 : 0.02; 
         
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        } else {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-        }
-
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = a0 + a1*py + a2*pz + a3*px + a4*py*py + a5*pz*pz + a6*px*px + a7*py*pz + a8*py*px + a9*pz*px;
-                res.dz = a0 + a1*pz + a2*px + a3*py + a4*pz*pz + a5*px*px + a6*py*py + a7*pz*px + a8*pz*py + a9*px*py;
-            } else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
-        }
-        
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        for(let i=0; i<1000; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        let diagonalSum = 0;
-        const visited = new Set();
-        let voxRes = (genType === 'sym') ? 0.2 : 0.5;
-        
-        let steps = 2000;
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
-            
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (genType === 'sym') diagonalSum += (Math.abs(x-y) + Math.abs(y-z) + Math.abs(z-x));
-            if (i % 10 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        if (lyapunov < 0.001) return false;
-        if (lyapunov > 2.0) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        let minTotal = (genType === 'sym') ? 1.0 : 3.0; 
-        if (wX < 0.1 || wY < 0.1 || wZ < 0.1) return false;
-        if ((wX + wY + wZ) < minTotal) return false;
-        
-        let vThreshold = (genType === 'sym') ? 50 : 25; 
-        if (visited.size < vThreshold) return false;
-        
-        if (genType === 'sym') {
-            let avgDiag = diagonalSum / steps;
-            if (avgDiag < 0.08) return false;
-        }
-
-        return true;
-    }
-
-    function generateTrace(physicsSteps, density, seedOffset, c, genType) {
-        const totalPoints = physicsSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = (genType === 'sym') ? 0.005 : 0.015;
-
-        // Cache Coeffs
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -874,6 +763,7 @@ function serializeState() {
             span: document.getElementById('ui-focus-span').value
         },
         export: {
+            unit: exportUnit, 
             width: document.getElementById('ui-print-w').value,
             height: document.getElementById('ui-print-h').value,
             dpi: document.getElementById('ui-print-dpi').value,
@@ -909,10 +799,23 @@ function applyState(data) {
             document.getElementById('ui-focus-span').value = s.dof.span || 0;
         }
         if (s.export) {
-            document.getElementById('ui-print-w').value = s.export.width || 24;
-            document.getElementById('ui-print-h').value = s.export.height || 36;
-            document.getElementById('ui-print-dpi').value = s.export.dpi || 300;
-            document.getElementById('ui-print-passes').value = s.export.passes || 1;
+            const ex = s.export;
+            exportUnit = ex.unit || 'inches';
+            document.getElementById('ui-export-unit').value = exportUnit;
+            
+            // Fix Labels
+            const labelW = document.getElementById('ui-label-w');
+            const labelH = document.getElementById('ui-label-h');
+            if(exportUnit === 'pixels') {
+                labelW.innerText = "Width (px)"; labelH.innerText = "Height (px)";
+            } else {
+                labelW.innerText = "Width (in)"; labelH.innerText = "Height (in)";
+            }
+
+            document.getElementById('ui-print-w').value = ex.width || (exportUnit==='pixels'?1920:24);
+            document.getElementById('ui-print-h').value = ex.height || (exportUnit==='pixels'?1080:36);
+            document.getElementById('ui-print-dpi').value = ex.dpi || (exportUnit==='pixels'?72:300);
+            document.getElementById('ui-print-passes').value = ex.passes || 1;
         }
 
     } else {
@@ -1065,15 +968,21 @@ div.appendChild(createSection("EXPORT", `
         <input type="checkbox" id="ui-show-guide"> Show Print Crop Guide
     </label>
 
-    <div style="margin-bottom:5px; font-size:12px; color:#aaa;">Dimensions (Inches)</div>
+    <div style="margin-bottom:5px; font-size:12px; color:#aaa;">Dimensions</div>
+    
+    <select id="ui-export-unit" style="width:100%; margin-bottom:10px; background:#333; color:#fff; border:1px solid #555;">
+        <option value="inches">Inches (Print)</option>
+        <option value="pixels">Pixels (Screen)</option>
+    </select>
+
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <div style="flex:1">
-            <span style="color:#0f0; font-size:10px;">Width</span>
-            <input type="number" id="ui-print-w" value="24" style="width:100%" placeholder="W">
+            <span id="ui-label-w" style="color:#0f0; font-size:10px;">Width (in)</span>
+            <input type="number" id="ui-print-w" value="24" style="width:100%">
         </div>
         <div style="flex:1">
-            <span style="color:#0f0; font-size:10px;">Height</span>
-            <input type="number" id="ui-print-h" value="36" style="width:100%" placeholder="H">
+            <span id="ui-label-h" style="color:#0f0; font-size:10px;">Height (in)</span>
+            <input type="number" id="ui-print-h" value="36" style="width:100%">
         </div>
     </div>
 
@@ -1081,11 +990,11 @@ div.appendChild(createSection("EXPORT", `
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <div style="flex:1">
             <span style="color:#0f0; font-size:10px;">DPI</span>
-            <input type="number" id="ui-print-dpi" value="300" style="width:100%" placeholder="300">
+            <input type="number" id="ui-print-dpi" value="300" style="width:100%">
         </div>
         <div style="flex:1">
             <span style="color:#0f0; font-size:10px;">Passes</span>
-            <input type="number" id="ui-print-passes" value="1" style="width:100%" placeholder="1">
+            <input type="number" id="ui-print-passes" value="1" style="width:100%">
         </div>
     </div>
 
@@ -1140,6 +1049,32 @@ const inpPasses = document.getElementById('ui-print-passes');
 window.onerror = function(msg, url, line) {
     uiError.innerText = `JS Error: ${msg} (Line ${line})`;
     return false;
+};
+
+// Unit Toggle Logic
+const selectExportUnit = document.getElementById('ui-export-unit');
+const labelW = document.getElementById('ui-label-w');
+const labelH = document.getElementById('ui-label-h');
+
+selectExportUnit.onchange = (e) => {
+    exportUnit = e.target.value;
+    const wInput = document.getElementById('ui-print-w');
+    const hInput = document.getElementById('ui-print-h');
+    const dpiInput = document.getElementById('ui-print-dpi');
+
+    if (exportUnit === 'pixels') {
+        labelW.innerText = "Width (px)";
+        labelH.innerText = "Height (px)";
+        wInput.value = 1920; 
+        hInput.value = 1080;
+        dpiInput.value = 72; 
+    } else {
+        labelW.innerText = "Width (in)";
+        labelH.innerText = "Height (in)";
+        wInput.value = 24;
+        hInput.value = 36;
+        dpiInput.value = 300; 
+    }
 };
 
 selectGenType.onchange = (e) => { currentGenType = e.target.value; };
@@ -1487,14 +1422,23 @@ async function startPrintCheckout(blob) {
     actionContainer.style.marginTop = "10px";
     actionContainer.style.borderTop = "1px solid #555";
     actionContainer.style.paddingTop = "10px";
+    
+    // [FIX] Match the side padding of the other UI elements
     actionContainer.style.margin = "0 10px 10px 10px"; 
 
     const inchesW = parseFloat(inpW.value);
     const inchesH = parseFloat(inpH.value);
     const dpi = parseInt(inpDPI.value);
     
-    const totalW = Math.floor(inchesW * dpi);
-    const totalH = Math.floor(inchesH * dpi);
+    let totalW, totalH;
+    
+    if (exportUnit === 'pixels') {
+        totalW = Math.floor(inchesW);
+        totalH = Math.floor(inchesH);
+    } else {
+        totalW = Math.floor(inchesW * dpi);
+        totalH = Math.floor(inchesH * dpi);
+    }
     
     const masterCanvas = document.createElement('canvas');
     masterCanvas.width = totalW;
@@ -1502,7 +1446,7 @@ async function startPrintCheckout(blob) {
 
     const peechoLink = document.createElement('a');
     peechoLink.href = "https://www.peecho.com"; 
-    peechoLink.target = "_blank"; 
+    peechoLink.target = "_blank"; // [FIX] Open in new window
 
     peechoLink.className = "peecho-print-button";    
     peechoLink.setAttribute('data-src', signedUrl);
@@ -1612,8 +1556,16 @@ async function startTiledExport(mode = 'download') {
     const dpi = parseInt(inpDPI.value);
     const passes = parseInt(inpPasses.value);
     
-    const totalW = Math.floor(inchesW * dpi);
-    const totalH = Math.floor(inchesH * dpi);
+    let totalW, totalH;
+    
+    // [UPDATED] Unit Calculation
+    if (exportUnit === 'pixels') {
+        totalW = Math.floor(inchesW);
+        totalH = Math.floor(inchesH);
+    } else {
+        totalW = Math.floor(inchesW * dpi);
+        totalH = Math.floor(inchesH * dpi);
+    }
     
     const masterCanvas = document.createElement('canvas');
     masterCanvas.width = totalW;
