@@ -103,7 +103,6 @@ const workerCode = `
         else if (e.data.type === 'render') renderExisting(e.data);
     };
 
-    // --- CATMULL-ROM SPLINE MATH ---
     function catmullRom(p0, p1, p2, p3, t) {
         const v0 = (p2 - p0) * 0.5;
         const v1 = (p3 - p1) * 0.5;
@@ -116,6 +115,7 @@ const workerCode = `
 
     function renderExisting(data) {
         const c = new Float32Array(data.coeffs);
+        // [FIX] Ensure we pass data.physicsSteps to the renamed argument
         const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType); 
         self.postMessage({
             type: 'found', 
@@ -238,6 +238,121 @@ const workerCode = `
         }
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
+        
+        for(let i=0; i<1000; i++) {
+            calcD(x, y, z, k1);
+            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            if (Math.abs(x) > 100 || isNaN(x)) return false; 
+        }
+
+        sx = x + 0.000001; sy = y; sz = z;
+        let lyapunovSum = 0;
+        let d0 = 0.000001;
+        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
+        let diagonalSum = 0;
+        const visited = new Set();
+        let voxRes = (genType === 'sym') ? 0.2 : 0.5;
+        
+        let steps = 2000;
+        for(let i=0; i<steps; i++) {
+            calcD(x, y, z, k1);
+            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+
+            calcD(sx, sy, sz, k1);
+            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
+            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
+            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
+            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+
+            if (Math.abs(x) > 100) return false;
+
+            let dx = x - sx, dy = y - sy, dz = z - sz;
+            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            if (d < 1e-15) return false; 
+            lyapunovSum += Math.log(d / d0);
+            let s = d0 / d;
+            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
+            
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+
+            if (genType === 'sym') diagonalSum += (Math.abs(x-y) + Math.abs(y-z) + Math.abs(z-x));
+            if (i % 10 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
+        }
+        
+        let lyapunov = lyapunovSum / steps;
+        
+        if (lyapunov < 0.001) return false;
+        if (lyapunov > 2.0) return false;
+        
+        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+        let minTotal = (genType === 'sym') ? 1.0 : 3.0; 
+        if (wX < 0.1 || wY < 0.1 || wZ < 0.1) return false;
+        if ((wX + wY + wZ) < minTotal) return false;
+        
+        let vThreshold = (genType === 'sym') ? 50 : 25; 
+        if (visited.size < vThreshold) return false;
+        
+        if (genType === 'sym') {
+            let avgDiag = diagonalSum / steps;
+            if (avgDiag < 0.08) return false;
+        }
+
+        return true;
+    }
+
+    // [FIX] Renamed 'physicsSteps' to 'nSteps' to avoid scope ambiguity
+    function generateTrace(nSteps, density, seedOffset, c, genType) {
+        const totalPoints = nSteps * density; 
+        
+        let posData = new Float32Array(totalPoints * 3);
+        let metaData = new Float32Array(totalPoints * 2); 
+        const rand = mulberry32(seedOffset + 12345);
+
+        let x, y, z;
+        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
+        else { x = 0.05; y = 0.05; z = 0.05; }
+
+        let dt = (genType === 'sym') ? 0.005 : 0.015;
+
+        // Cache Coeffs
+        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
+        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
+        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
+        if (genType === 'poly') {
+           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
+           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
+           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
+        } else {
+           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
+        }
+
+        function calcD(px, py, pz, res) {
+            if (genType === 'sym') {
+                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
+                res.dy = a0 + a1*py + a2*pz + a3*px + a4*py*py + a5*pz*pz + a6*px*px + a7*py*pz + a8*py*px + a9*pz*px;
+                res.dz = a0 + a1*pz + a2*px + a3*py + a4*pz*pz + a5*px*px + a6*py*py + a7*pz*px + a8*pz*py + a9*px*py;
+            } else {
+                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
+                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
+                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
+            }
+        }
+        
+        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
 
         const history = []; 
         function stepPhysics() {
@@ -264,7 +379,8 @@ const workerCode = `
         let outIdx = 0;
         let maxVel = 0;
 
-        for(let i=0; i<physicsSteps; i++) {
+        // [FIX] Loop uses nSteps
+        for(let i=0; i<nSteps; i++) {
             let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
             if (Math.abs(p2.x) > 1000 || isNaN(p2.x)) break;
 
