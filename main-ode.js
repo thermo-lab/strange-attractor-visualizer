@@ -928,8 +928,8 @@ function applyState(data) {
                 labelW.innerText = "Width (in)"; labelH.innerText = "Height (in)";
             }
 
-            document.getElementById('ui-print-w').value = ex.width || (exportUnit==='pixels'?1920:24);
-            document.getElementById('ui-print-h').value = ex.height || (exportUnit==='pixels'?1080:36);
+            document.getElementById('ui-print-w').value = ex.width || (exportUnit==='pixels'?1080:24);
+            document.getElementById('ui-print-h').value = ex.height || (exportUnit==='pixels'?1920:36);
             document.getElementById('ui-print-dpi').value = ex.dpi || (exportUnit==='pixels'?72:300);
             document.getElementById('ui-print-passes').value = ex.passes || 1;
         }
