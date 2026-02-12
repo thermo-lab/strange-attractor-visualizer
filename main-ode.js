@@ -18,7 +18,8 @@
    - FIXED: Additive Glow (Removed Tone Mapping to allow "blow out" effects)
    - NEW: POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
    - NEW: Export Unit Toggle (Inches vs Pixels)
-   - NEW: Transparent Background Export
+   - NEW: Transparent Background Export (with Un-multiplied Alpha fix)
+   - NEW: Swap Dimensions Button
 */
 
 // ==========================================
@@ -68,7 +69,7 @@ let isExporting = false;
 
 // Export State
 let exportUnit = 'inches'; // 'inches' or 'pixels'
-let exportTransparent = false; // [NEW] Transparency Toggle
+let exportTransparent = false; 
 
 // --- VIEWPORT FBO REFS ---
 let viewFbo = null;
@@ -901,7 +902,7 @@ function serializeState() {
         },
         export: {
             unit: exportUnit, 
-            transparent: exportTransparent, // [NEW] Save Transparent Setting
+            transparent: exportTransparent, 
             width: document.getElementById('ui-print-w').value,
             height: document.getElementById('ui-print-h').value,
             dpi: document.getElementById('ui-print-dpi').value,
@@ -939,7 +940,7 @@ function applyState(data) {
         if (s.export) {
             const ex = s.export;
             exportUnit = ex.unit || 'inches';
-            exportTransparent = ex.transparent || false; // [NEW] Restore Transparent Setting
+            exportTransparent = ex.transparent || false; 
             document.getElementById('ui-export-unit').value = exportUnit;
             document.getElementById('ui-export-transparent').checked = exportTransparent;
             
@@ -1115,11 +1116,12 @@ div.appendChild(createSection("EXPORT", `
         <option value="pixels">Pixels (Screen)</option>
     </select>
 
-    <div style="display:flex; gap:5px; margin-bottom:10px;">
+    <div style="display:flex; gap:5px; align-items:flex-end; margin-bottom:10px;">
         <div style="flex:1">
             <span id="ui-label-w" style="color:#0f0; font-size:10px;">Width (in)</span>
             <input type="number" id="ui-print-w" value="24" style="width:100%">
         </div>
+        <button id="ui-btn-swap" style="width:24px; height:24px; margin-bottom:2px; background:#222; color:#fff; border:1px solid #555; cursor:pointer; padding:0; line-height:1;">⇄</button>
         <div style="flex:1">
             <span id="ui-label-h" style="color:#0f0; font-size:10px;">Height (in)</span>
             <input type="number" id="ui-print-h" value="36" style="width:100%">
@@ -1200,6 +1202,13 @@ const selectExportUnit = document.getElementById('ui-export-unit');
 const checkTransparent = document.getElementById('ui-export-transparent');
 const labelW = document.getElementById('ui-label-w');
 const labelH = document.getElementById('ui-label-h');
+const btnSwap = document.getElementById('ui-btn-swap');
+
+btnSwap.onclick = () => {
+    const temp = inpW.value;
+    inpW.value = inpH.value;
+    inpH.value = temp;
+};
 
 selectExportUnit.onchange = (e) => {
     exportUnit = e.target.value;
@@ -1570,7 +1579,7 @@ async function startPrintCheckout(blob) {
     actionContainer.style.borderTop = "1px solid #555";
     actionContainer.style.paddingTop = "10px";
     
-    // [FIX] Match the side padding of the other UI elements
+    // Match the side padding of the other UI elements
     actionContainer.style.margin = "0 10px 10px 10px"; 
 
     const inchesW = parseFloat(inpW.value);
@@ -1593,7 +1602,7 @@ async function startPrintCheckout(blob) {
 
     const peechoLink = document.createElement('a');
     peechoLink.href = "https://www.peecho.com"; 
-    peechoLink.target = "_blank"; // [FIX] Open in new window
+    peechoLink.target = "_blank"; 
 
     peechoLink.className = "peecho-print-button";    
     peechoLink.setAttribute('data-src', signedUrl);
