@@ -1181,8 +1181,8 @@ selectExportUnit.onchange = (e) => {
     if (exportUnit === 'pixels') {
         labelW.innerText = "Width (px)";
         labelH.innerText = "Height (px)";
-        wInput.value = 1920; 
-        hInput.value = 1080;
+        wInput.value = 1080; 
+        hInput.value = 1920;
         dpiInput.value = 72; 
     } else {
         labelW.innerText = "Width (in)";
