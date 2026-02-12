@@ -26,7 +26,7 @@ const MAX_ALLOCATION = 50000000;
 
 // --- POD CONFIG ---
 const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
-const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; // REPLACE WITH YOUR ACTUAL SITE KEY
+const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; // <--- UPDATED KEY
 
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
@@ -40,9 +40,12 @@ let currentCoeffs = null;
 let currentGenType = 'poly';
 let colorMode = 0;
 
+// [RESTORED MISSING VARIABLE]
+let colorSeed = [0.0, 0.0, 0.0];
+
 // [CHANGED] Defaults for Glow Mode
-let blendMode = 'ADD';       // WAS: 'NORMAL'
-let isInverted = false;      // WAS: true (False = Dark Background)
+let blendMode = 'ADD';       // Default to Glow
+let isInverted = false;      // Default to Dark Background (False = Dark)
 let incBlack = true;
 let incWhite = true;
 
@@ -61,7 +64,7 @@ let currentPointSize = 1.0;
 let currentDensity = 1;
 let currentJitter = 0.5;
 let currentVariation = 0.0;
-let isExporting = false;
+let isExporting = false; 
 
 // --- VIEWPORT FBO REFS ---
 let viewFbo = null;
@@ -77,7 +80,6 @@ let lastAngle = 0;
 let renderScale = 1.0;     // Current resolution scale (1.0 = Full, 0.5 = Half)
 let isInteracting = false; // Are we currently touching/dragging?
 let pendingResize = false; // Flag to trigger FBO update
-
 
 // ==========================================
 // 1. THE WORKER (INTERPOLATION ENGINE)
