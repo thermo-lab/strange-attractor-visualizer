@@ -18,6 +18,7 @@
    - FIXED: Additive Glow (Removed Tone Mapping to allow "blow out" effects)
    - NEW: POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
    - NEW: Export Unit Toggle (Inches vs Pixels)
+   - NEW: Transparent Background Export
 */
 
 // ==========================================
@@ -42,31 +43,32 @@ let currentGenType = 'poly';
 let colorMode = 0;
 let colorSeed = [0.0, 0.0, 0.0];
 
-// [UPDATED] Defaults for Glow Mode
-let blendMode = 'ADD';       // Default to Glow
-let isInverted = false;      // Default to Dark Background (False = Dark)
+// Defaults for Glow Mode
+let blendMode = 'ADD';       
+let isInverted = false;      
 let incBlack = true;
 let incWhite = true;
 
-// [UPDATED] Default Background to Dark/Black
-let bgA = [0.0, 0.0, 0.0];   // Pure Black Center
-let bgB = [0.1, 0.1, 0.1];   // Dark Gray Corners (Vignette)
+// Default Background to Dark/Black
+let bgA = [0.0, 0.0, 0.0];   
+let bgB = [0.1, 0.1, 0.1];   
 let bgParams = [0.0, 0.5, 1.0]; 
 
 // High Quality Defaults
 let currentPhysicsSteps = 1000000; 
 let currentOpacity = 0.02;          
-let currentIntensity = 2.0;  // Default reduced to 20% (slider 20)
+let currentIntensity = 2.0;  
 let currentGamma = 1.8;
-let currentNoise = 0.05;     // Default reduced to 50% (slider 10)
+let currentNoise = 0.05;     
 let currentPointSize = 1.0;
 let currentDensity = 1;
 let currentJitter = 0.5;
 let currentVariation = 0.0;
 let isExporting = false; 
 
-// [NEW] Export Unit State
+// Export State
 let exportUnit = 'inches'; // 'inches' or 'pixels'
+let exportTransparent = false; // [NEW] Transparency Toggle
 
 // --- VIEWPORT FBO REFS ---
 let viewFbo = null;
@@ -79,9 +81,9 @@ let isRolling = false;
 let lastX = 0, lastY = 0;
 let lastDist = 0;
 let lastAngle = 0;
-let renderScale = 1.0;     // Current resolution scale (1.0 = Full, 0.5 = Half)
-let isInteracting = false; // Are we currently touching/dragging?
-let pendingResize = false; // Flag to trigger FBO update
+let renderScale = 1.0;     
+let isInteracting = false; 
+let pendingResize = false; 
 
 
 // ==========================================
@@ -115,7 +117,6 @@ const workerCode = `
 
     function renderExisting(data) {
         const c = new Float32Array(data.coeffs);
-        // [FIX] Ensure we pass data.physicsSteps to the renamed argument
         const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType); 
         self.postMessage({
             type: 'found', 
@@ -314,7 +315,6 @@ const workerCode = `
         return true;
     }
 
-    // [FIX] Renamed 'physicsSteps' to 'nSteps' to avoid scope ambiguity
     function generateTrace(nSteps, density, seedOffset, c, genType) {
         const totalPoints = nSteps * density; 
         
@@ -379,7 +379,6 @@ const workerCode = `
         let outIdx = 0;
         let maxVel = 0;
 
-        // [FIX] Loop uses nSteps
         for(let i=0; i<nSteps; i++) {
             let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
             if (Math.abs(p2.x) > 1000 || isNaN(p2.x)) break;
@@ -641,6 +640,7 @@ uniform int u_inc_black;
 uniform int u_inc_white;
 uniform int u_blend_mode; 
 uniform float u_scale; 
+uniform int u_transparent;
 
 uniform int u_show_guide;
 uniform float u_print_aspect; 
@@ -661,15 +661,6 @@ float triangularNoise(vec2 uv) {
 
 void main() { 
     vec2 globalUV = (gl_FragCoord.xy + u_off) / u_res;
-    float aspect = u_res.x / u_res.y;
-    
-    vec2 auv = globalUV; auv.x *= aspect;
-    vec2 cnt = vec2(0.5*aspect,0.5) + (vec2(cos(u_bg_params.x), sin(u_bg_params.x))*u_bg_params.y);
-    float t = smoothstep(0.0, 1.5*u_bg_params.z, distance(auv, cnt));
-    vec3 bg = mix(u_bg_a, u_bg_b, t);
-    
-    bg += (hash(gl_FragCoord.xy)-0.5) * (u_noise*0.05);
-
     ivec2 texCoord = ivec2(gl_FragCoord.xy * u_scale);
     vec4 pVal = texelFetch(u_tex, texCoord, 0) / u_passes;
 
@@ -688,31 +679,53 @@ void main() {
     energy = max(vec3(0.0), energy); 
     energy = pow(energy, vec3(1.0/u_gamma));
 
-    vec3 finalRGB;
-    if (u_invert == 1) finalRGB = bg * (1.0 - energy); 
-    else finalRGB = bg + energy; 
-    
-    if (u_show_guide == 1) {
-        float viewAspect = u_res.x / u_res.y;
-        float targetAspect = u_print_aspect;
-        if (targetAspect < viewAspect) {
-            float safeRatio = targetAspect / viewAspect;
-            float margin = (1.0 - safeRatio) * 0.5;
-            if (globalUV.x < margin || globalUV.x > (1.0 - margin)) {
-                finalRGB *= 0.3; 
-                finalRGB += vec3(0.1, 0.1, 0.1); 
-            }
-            float lineW = 1.0 / u_res.x; 
-            if (abs(globalUV.x - margin) < lineW || abs(globalUV.x - (1.0-margin)) < lineW) {
-                finalRGB = vec3(0.5, 0.5, 0.5); 
+    // TRANSPARENCY CHECK
+    if (u_transparent == 1) {
+        if (u_invert == 1) {
+             // Ink Mode (Normal): Output Black with alpha = darkness
+             // Energy is the color value, so we want the inverse as alpha
+             float alpha = dot(energy, vec3(0.333)); 
+             c = vec4(0.0, 0.0, 0.0, clamp(alpha, 0.0, 1.0));
+        } else {
+             // Glow Mode (Add): Output Color with alpha = density
+             c = vec4(energy, clamp(pVal.a, 0.0, 1.0));
+        }
+    } else {
+        // STANDARD BACKGROUND COMPOSITE
+        float aspect = u_res.x / u_res.y;
+        vec2 auv = globalUV; auv.x *= aspect;
+        vec2 cnt = vec2(0.5*aspect,0.5) + (vec2(cos(u_bg_params.x), sin(u_bg_params.x))*u_bg_params.y);
+        float t = smoothstep(0.0, 1.5*u_bg_params.z, distance(auv, cnt));
+        vec3 bg = mix(u_bg_a, u_bg_b, t);
+        
+        bg += (hash(gl_FragCoord.xy)-0.5) * (u_noise*0.05);
+
+        vec3 finalRGB;
+        if (u_invert == 1) finalRGB = bg * (1.0 - energy); 
+        else finalRGB = bg + energy; 
+        
+        // Print Guide
+        if (u_show_guide == 1) {
+            float viewAspect = u_res.x / u_res.y;
+            float targetAspect = u_print_aspect;
+            if (targetAspect < viewAspect) {
+                float safeRatio = targetAspect / viewAspect;
+                float margin = (1.0 - safeRatio) * 0.5;
+                if (globalUV.x < margin || globalUV.x > (1.0 - margin)) {
+                    finalRGB *= 0.3; 
+                    finalRGB += vec3(0.1, 0.1, 0.1); 
+                }
+                float lineW = 1.0 / u_res.x; 
+                if (abs(globalUV.x - margin) < lineW || abs(globalUV.x - (1.0-margin)) < lineW) {
+                    finalRGB = vec3(0.5, 0.5, 0.5); 
+                }
             }
         }
+        
+        c = vec4(finalRGB, 1.0);
+        float ditherStrength = max(u_noise * 0.2, 0.004); 
+        c.rgb += triangularNoise(gl_FragCoord.xy) * ditherStrength;
     }
-
-    c = vec4(finalRGB, 1.0);
-    
-    float ditherStrength = max(u_noise * 0.2, 0.004); 
-    c.rgb += triangularNoise(gl_FragCoord.xy) * ditherStrength;
 }`;
 
 function createShader(gl, type, source) {
@@ -880,6 +893,7 @@ function serializeState() {
         },
         export: {
             unit: exportUnit, 
+            transparent: exportTransparent, // [NEW] Save Transparent Setting
             width: document.getElementById('ui-print-w').value,
             height: document.getElementById('ui-print-h').value,
             dpi: document.getElementById('ui-print-dpi').value,
@@ -917,7 +931,9 @@ function applyState(data) {
         if (s.export) {
             const ex = s.export;
             exportUnit = ex.unit || 'inches';
+            exportTransparent = ex.transparent || false; // [NEW] Restore Transparent Setting
             document.getElementById('ui-export-unit').value = exportUnit;
+            document.getElementById('ui-export-transparent').checked = exportTransparent;
             
             // Fix Labels
             const labelW = document.getElementById('ui-label-w');
@@ -928,8 +944,8 @@ function applyState(data) {
                 labelW.innerText = "Width (in)"; labelH.innerText = "Height (in)";
             }
 
-            document.getElementById('ui-print-w').value = ex.width || (exportUnit==='pixels'?1080:24);
-            document.getElementById('ui-print-h').value = ex.height || (exportUnit==='pixels'?1920:36);
+            document.getElementById('ui-print-w').value = ex.width || (exportUnit==='pixels'?1920:24);
+            document.getElementById('ui-print-h').value = ex.height || (exportUnit==='pixels'?1080:36);
             document.getElementById('ui-print-dpi').value = ex.dpi || (exportUnit==='pixels'?72:300);
             document.getElementById('ui-print-passes').value = ex.passes || 1;
         }
@@ -1101,6 +1117,10 @@ div.appendChild(createSection("EXPORT", `
             <input type="number" id="ui-print-h" value="36" style="width:100%">
         </div>
     </div>
+    
+    <label style="display:block; margin-bottom:10px; color:#aaa; font-size:11px; cursor:pointer;">
+        <input type="checkbox" id="ui-export-transparent"> Transparent Background
+    </label>
 
     <div style="margin-bottom:5px; font-size:12px; color:#aaa;">Quality</div>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -1167,8 +1187,9 @@ window.onerror = function(msg, url, line) {
     return false;
 };
 
-// Unit Toggle Logic
+// Unit & Transparent Toggle Logic
 const selectExportUnit = document.getElementById('ui-export-unit');
+const checkTransparent = document.getElementById('ui-export-transparent');
 const labelW = document.getElementById('ui-label-w');
 const labelH = document.getElementById('ui-label-h');
 
@@ -1181,8 +1202,8 @@ selectExportUnit.onchange = (e) => {
     if (exportUnit === 'pixels') {
         labelW.innerText = "Width (px)";
         labelH.innerText = "Height (px)";
-        wInput.value = 1080; 
-        hInput.value = 1920;
+        wInput.value = 1920; 
+        hInput.value = 1080;
         dpiInput.value = 72; 
     } else {
         labelW.innerText = "Width (in)";
@@ -1192,6 +1213,8 @@ selectExportUnit.onchange = (e) => {
         dpiInput.value = 300; 
     }
 };
+
+checkTransparent.onchange = (e) => { exportTransparent = e.target.checked; };
 
 selectGenType.onchange = (e) => { currentGenType = e.target.value; };
 inputBg1.oninput = (e) => { bgA = hexToRgb(e.target.value); };
@@ -1674,7 +1697,6 @@ async function startTiledExport(mode = 'download') {
     
     let totalW, totalH;
     
-    // [UPDATED] Unit Calculation
     if (exportUnit === 'pixels') {
         totalW = Math.floor(inchesW);
         totalH = Math.floor(inchesH);
@@ -1798,6 +1820,7 @@ async function startTiledExport(mode = 'download') {
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_invert"), isInverted?1:0);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_black"), incBlack?1:0);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_white"), incWhite?1:0);
+            gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_transparent"), exportTransparent?1:0);
             gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), 1.0); 
             
             let bMode = 0;
@@ -1914,8 +1937,9 @@ function renderFrame() {
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-        const interactionDimmer = isInteracting ? 0.4 : 1.0;
-        let targetOpacity = (currentOpacity / gpuRenderedDensity) * interactionDimmer;
+        const interactionDimmer = isInteracting ? 0.4 : 1.0; 
+
+        let targetOpacity = (currentOpacity / gpuRenderedDensity) * interactionDimmer; 
         let safeOpacity = Math.max(targetOpacity, 0.000001); 
         
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), safeOpacity);
@@ -1953,7 +1977,8 @@ function renderFrame() {
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_invert"), isInverted?1:0);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_black"), incBlack?1:0);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_white"), incWhite?1:0);
-        
+        gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_transparent"), 0); // Viewport always opaque
+
         let bMode = 0;
         if (blendMode === 'ADD') bMode = 1;
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
