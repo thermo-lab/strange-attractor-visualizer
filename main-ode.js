@@ -39,26 +39,29 @@ let currentQuat = [0, 0, 0, 1];
 let currentCoeffs = null;
 let currentGenType = 'poly';
 let colorMode = 0;
-let blendMode = 'NORMAL'; 
-let colorSeed = [0.0, 0.0, 0.0];
-let isInverted = true; // Default to true because default mode is Paint
+
+// [CHANGED] Defaults for Glow Mode
+let blendMode = 'ADD';       // WAS: 'NORMAL'
+let isInverted = false;      // WAS: true (False = Dark Background)
 let incBlack = true;
 let incWhite = true;
-let bgA = [0.9, 0.9, 0.9]; 
-let bgB = [1.0, 1.0, 1.0]; 
+
+// [CHANGED] Default Background to Dark/Black
+let bgA = [0.0, 0.0, 0.0];   // Pure Black Center
+let bgB = [0.1, 0.1, 0.1];   // Dark Gray Corners (Vignette)
 let bgParams = [0.0, 0.5, 1.0]; 
 
-// High Quality Defaults (UPDATED)
+// High Quality Defaults
 let currentPhysicsSteps = 1000000; 
 let currentOpacity = 0.02;          
-let currentIntensity = 2.0;  // Default reduced to 20 (was 100)
+let currentIntensity = 2.0;  
 let currentGamma = 1.8;
-let currentNoise = 0.05;     // Default reduced to 10 (was 20)
+let currentNoise = 0.05;     
 let currentPointSize = 1.0;
 let currentDensity = 1;
 let currentJitter = 0.5;
 let currentVariation = 0.0;
-let isExporting = false; 
+let isExporting = false;
 
 // --- VIEWPORT FBO REFS ---
 let viewFbo = null;
