@@ -679,19 +679,28 @@ void main() {
     energy = max(vec3(0.0), energy); 
     energy = pow(energy, vec3(1.0/u_gamma));
 
-    // TRANSPARENCY CHECK
+    // --- TRANSPARENCY EXPORT LOGIC ---
     if (u_transparent == 1) {
         if (u_invert == 1) {
-             // Ink Mode (Normal): Output Black with alpha = darkness
-             // Energy is the color value, so we want the inverse as alpha
-             float alpha = dot(energy, vec3(0.333)); 
+             // INK MODE (Normal): Output Black with Alpha = Darkness
+             float alpha = dot(energy, vec3(0.299, 0.587, 0.114)); 
              c = vec4(0.0, 0.0, 0.0, clamp(alpha, 0.0, 1.0));
         } else {
-             // Glow Mode (Add): Output Color with alpha = density
-             c = vec4(energy, clamp(pVal.a, 0.0, 1.0));
+             // GLOW MODE (Add): Fix for "Insubstantial" look
+             // 1. Alpha is determined by the BRIGHTEST color channel
+             float maxComp = max(energy.r, max(energy.g, energy.b));
+             float alpha = clamp(maxComp, 0.0, 1.0);
+             
+             // 2. Un-multiply RGB so the PNG viewer restores full brightness
+             vec3 safeRGB = vec3(0.0);
+             if(alpha > 0.0001) {
+                 safeRGB = energy / alpha;
+             }
+             
+             c = vec4(clamp(safeRGB, 0.0, 1.0), alpha);
         }
     } else {
-        // STANDARD BACKGROUND COMPOSITE
+        // --- STANDARD BACKGROUND COMPOSITE ---
         float aspect = u_res.x / u_res.y;
         vec2 auv = globalUV; auv.x *= aspect;
         vec2 cnt = vec2(0.5*aspect,0.5) + (vec2(cos(u_bg_params.x), sin(u_bg_params.x))*u_bg_params.y);
@@ -704,7 +713,6 @@ void main() {
         if (u_invert == 1) finalRGB = bg * (1.0 - energy); 
         else finalRGB = bg + energy; 
         
-        // Print Guide
         if (u_show_guide == 1) {
             float viewAspect = u_res.x / u_res.y;
             float targetAspect = u_print_aspect;
