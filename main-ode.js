@@ -1914,7 +1914,8 @@ function renderFrame() {
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-        let targetOpacity = currentOpacity / gpuRenderedDensity;
+        const interactionDimmer = isInteracting ? 0.4 : 1.0;
+        let targetOpacity = (currentOpacity / gpuRenderedDensity) * interactionDimmer;
         let safeOpacity = Math.max(targetOpacity, 0.000001); 
         
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), safeOpacity);
