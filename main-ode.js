@@ -6,21 +6,9 @@
    - Mobile-First Performance Tuning
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
-   - Multi-Engine: Poly, Symmetric, NEW: Gene Regulatory Network (GRN)
-   - FIXED: Sym Invariant Subspace Bug (Off-diagonal init)
-   - FIXED: Density Color Shift (Normalized v_time by u_pointCount)
-   - FIXED: Export Length (Decoupled Smoothness from Simulation Duration)
-   - UPGRADE: True Physics Sub-stepping
-   - FIXED: Initial Render Quality (Auto-refreshes to full quality)
-   - FIXED: Export Opacity (Consistent with viewport)
-   - FIXED: Slider Sync Glitch (Opacity now locked to GPU data)
-   - UI UPDATE: Removed Invert Checkbox (Auto-switches based on Blend Mode)
-   - FIXED: Additive Glow (Removed Tone Mapping to allow "blow out" effects)
-   - NEW: POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
-   - NEW: Export Unit Toggle (Inches vs Pixels)
-   - NEW: Transparent Background Export (with Un-multiplied Alpha fix)
-   - NEW: Swap Dimensions Button
-   - NEW: Gene Regulatory Network (GRN) Generator
+   - Multi-Engine: Poly, Symmetric, GRN
+   - NEW ENGINES: Dadras, Thomas, Aizawa
+   - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
 // ==========================================
@@ -147,35 +135,48 @@ const workerCode = `
                 for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
             } 
             else if (genType === 'grn') {
-                // 18 Parameters:
                 coeffs = new Float32Array(18);
-                
-                // 1. Weights (0-8): Interaction Matrix
-                // Tuned Range: +/- 10.0 (Strong interactions)
                 for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
-                
-                // 2. Thresholds (9-11): Auto-balancing
-                // Centers the sigmoid switching point based on incoming weights
                 coeffs[9]  = (coeffs[0] + coeffs[1] + coeffs[2]) * 0.5 + (Math.random() - 0.5);
                 coeffs[10] = (coeffs[3] + coeffs[4] + coeffs[5]) * 0.5 + (Math.random() - 0.5);
                 coeffs[11] = (coeffs[6] + coeffs[7] + coeffs[8]) * 0.5 + (Math.random() - 0.5);
-
-                // 3. Gains (12-14): 
-                // Chaos Sweet Spot: 2.5 to 7.0
                 for(let i=12; i<15; i++) coeffs[i] = 2.5 + Math.random() * 4.5; 
-                
-                // 4. Decays (15-17): [CRITICAL] Timescale Separation
-                // We force distinct speeds: Fast, Medium, Slow.
-                // This "frustration" causes the trajectory to fold over itself.
-                let d1 = 0.2 + Math.random() * 0.2; // Slow
-                let d2 = 0.6 + Math.random() * 0.3; // Medium
-                let d3 = 1.0 + Math.random() * 0.5; // Fast
-                
-                // Shuffle assignment
+                let d1 = 0.2 + Math.random() * 0.2; 
+                let d2 = 0.6 + Math.random() * 0.3; 
+                let d3 = 1.0 + Math.random() * 0.5; 
                 let r = Math.random();
                 if(r < 0.33) { coeffs[15]=d1; coeffs[16]=d2; coeffs[17]=d3; }
                 else if(r < 0.66) { coeffs[15]=d3; coeffs[16]=d1; coeffs[17]=d2; }
                 else { coeffs[15]=d2; coeffs[16]=d3; coeffs[17]=d1; }
+            }
+            else if (genType === 'dadras') {
+                // Dadras: 5 Parameters
+                // dx = y - ax + byz
+                // dy = cy - xz + z
+                // dz = dxy - ez
+                coeffs = new Float32Array(5);
+                coeffs[0] = 2.5 + Math.random();      // a ~ 3
+                coeffs[1] = 2.0 + Math.random() * 1.5; // b ~ 2.7
+                coeffs[2] = 1.5 + Math.random();      // c ~ 1.7
+                coeffs[3] = 1.5 + Math.random();      // d ~ 2
+                coeffs[4] = 8.0 + Math.random() * 2;  // e ~ 9
+            }
+            else if (genType === 'thomas') {
+                // Thomas: 1 Parameter (b)
+                // Cyclic Sine system
+                coeffs = new Float32Array(1);
+                // Chaos usually in 0.18 to 0.22 range
+                coeffs[0] = 0.15 + Math.random() * 0.1; 
+            }
+            else if (genType === 'aizawa') {
+                // Aizawa: 6 Parameters
+                coeffs = new Float32Array(6);
+                coeffs[0] = 0.95 + (Math.random()-0.5)*0.1; // a
+                coeffs[1] = 0.7  + (Math.random()-0.5)*0.1; // b
+                coeffs[2] = 0.6  + (Math.random()-0.5)*0.1; // c
+                coeffs[3] = 3.5  + (Math.random()-0.5)*0.5; // d
+                coeffs[4] = 0.25 + (Math.random()-0.5)*0.1; // e
+                coeffs[5] = 0.1  + (Math.random()-0.5)*0.05;// f
             }
             else {
                 // Poly (30 params)
@@ -184,6 +185,7 @@ const workerCode = `
             }
             
             if (checkChaosTail(coeffs, genType)) {
+                // Success - perform high quality render
                 const result = generateTrace(50000, 1, 0, coeffs, genType);
                 self.postMessage({
                     type: 'found', 
@@ -225,6 +227,15 @@ const workerCode = `
                 child[idx] += (Math.random() - 0.5) * range;
                 if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
             }
+            else if (genType === 'dadras') {
+                child[idx] += (Math.random() - 0.5) * 0.1;
+            }
+            else if (genType === 'thomas') {
+                child[0] += (Math.random() - 0.5) * 0.01;
+            }
+            else if (genType === 'aizawa') {
+                child[idx] += (Math.random() - 0.5) * 0.02;
+            }
             else {
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
@@ -249,15 +260,21 @@ const workerCode = `
 
     function checkChaosTail(c, genType) {
         let x, y, z;
+        // Initial Conditions
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
+        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
+        else if (genType === 'thomas') { x = 1.0; y = 1.0; z = 1.0; }
+        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
-        let dt = (genType === 'poly') ? 0.02 : 0.02;
-        
+        let dt = (genType === 'poly' || genType === 'thomas') ? 0.05 : 0.015;
+        if (genType === 'aizawa') dt = 0.01;
+
         let p = c; 
-        // ... (Poly Coeffs Declaration) ...
+        
+        // Poly Coeffs Unpack (Optimization)
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -283,6 +300,25 @@ const workerCode = `
                 res.dx = act1 - p[15]*px;
                 res.dy = act2 - p[16]*py;
                 res.dz = act3 - p[17]*pz;
+            }
+            else if (genType === 'dadras') {
+                // p[0]=a, p[1]=b, p[2]=c, p[3]=d, p[4]=e
+                res.dx = py - p[0]*px + p[1]*py*pz;
+                res.dy = p[2]*py - px*pz + pz;
+                res.dz = p[3]*px*py - p[4]*pz;
+            }
+            else if (genType === 'thomas') {
+                // p[0] = b
+                res.dx = Math.sin(py) - p[0]*px;
+                res.dy = Math.sin(pz) - p[0]*py;
+                res.dz = Math.sin(px) - p[0]*pz;
+            }
+            else if (genType === 'aizawa') {
+                // p[0]=a, p[1]=b, p[2]=c, p[3]=d, p[4]=e, p[5]=f
+                let x2 = px*px; let y2 = py*py;
+                res.dx = (pz - p[1])*px - p[3]*py;
+                res.dy = p[3]*px + (pz - p[1])*py;
+                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
             }
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
@@ -311,8 +347,12 @@ const workerCode = `
         let d0 = 0.000001;
         let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
         
-        // [TUNED] VoxRes 0.05 is good for [0,1] scale
-        let voxRes = (genType === 'grn') ? 0.05 : ((genType === 'sym') ? 0.2 : 0.5);
+        // VoxRes tuning for volume check
+        let voxRes = 0.5;
+        if(genType === 'grn') voxRes = 0.05;
+        if(genType === 'thomas') voxRes = 0.2;
+        if(genType === 'aizawa') voxRes = 0.1;
+
         const visited = new Set();
         let steps = 3000;
         
@@ -351,21 +391,20 @@ const workerCode = `
         
         let lyapunov = lyapunovSum / steps;
         
-        if (genType === 'grn') {
-            // [TUNED] Lowered threshold to 0.0015 to catch "weak" chaos
-            if (lyapunov < 0.0015) return false; 
-            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-            // Relaxed flatness check
-            if (wX < 0.05 || wY < 0.05 || wZ < 0.05) return false; 
-            // Relaxed volume check
-            if (visited.size < 60) return false; 
-        } else {
-            if (lyapunov < 0.001) return false;
-            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-            let minTotal = (genType === 'sym') ? 1.0 : 3.0; 
-            if ((wX + wY + wZ) < minTotal) return false;
-            if (visited.size < 25) return false;
-        }
+        // Thresholds
+        let minL = 0.001;
+        let minVol = 25;
+        let minWidth = 1.0;
+
+        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
+        if (genType === 'thomas') { minL=0.0001; minWidth=2.0; minVol=50; } 
+        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
+
+        if (lyapunov < minL) return false;
+        
+        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+        if ((wX + wY + wZ) < minWidth) return false;
+        if (visited.size < minVol) return false;
         if (lyapunov > 2.0) return false;
 
         return true;
@@ -381,13 +420,17 @@ const workerCode = `
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
+        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
+        else if (genType === 'thomas') { x = 1.0; y = 1.0; z = 1.0; }
+        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
-        let dt = (genType === 'poly') ? 0.015 : 0.01; 
+        let dt = (genType === 'poly' || genType === 'thomas') ? 0.05 : 0.015; 
+        if(genType === 'aizawa') dt = 0.01;
 
         // Cache Coeffs
         let p = c; 
-        // ... (Poly Coeffs skipped) ...
+        // Poly Coeffs
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -414,6 +457,22 @@ const workerCode = `
                 res.dy = act2 - p[16]*py;
                 res.dz = act3 - p[17]*pz;
             }
+            else if (genType === 'dadras') {
+                res.dx = py - p[0]*px + p[1]*py*pz;
+                res.dy = p[2]*py - px*pz + pz;
+                res.dz = p[3]*px*py - p[4]*pz;
+            }
+            else if (genType === 'thomas') {
+                res.dx = Math.sin(py) - p[0]*px;
+                res.dy = Math.sin(pz) - p[0]*py;
+                res.dz = Math.sin(px) - p[0]*pz;
+            }
+            else if (genType === 'aizawa') {
+                let x2 = px*px; let y2 = py*py;
+                res.dx = (pz - p[1])*px - p[3]*py;
+                res.dy = p[3]*px + (pz - p[1])*py;
+                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
+            }
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
@@ -423,7 +482,6 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        // [FIX] RESTORED HISTORY ARRAY
         const history = [];
 
         function stepPhysics() {
@@ -493,7 +551,12 @@ const workerCode = `
         let rms = Math.sqrt(sumDistSq / totalPoints);
         
         // GRN needs specific zoom (lives in [0,1])
-        let scaleTarget = (genType === 'grn') ? 0.8 : 0.5;
+        let scaleTarget = 0.5;
+        if (genType === 'grn') scaleTarget = 0.8;
+        if (genType === 'dadras') scaleTarget = 0.35; // Large range
+        if (genType === 'thomas') scaleTarget = 0.5;
+        if (genType === 'aizawa') scaleTarget = 0.6;
+
         if (rms > 0) {
             let s = scaleTarget / rms;
             for(let i=0; i<posData.length; i++) posData[i] *= s;
@@ -1104,6 +1167,9 @@ div.appendChild(createSection("GENERATION", `
         <option value="poly">Polynomial (Cloud/Wire)</option>
         <option value="sym">Symmetric (CodeParade)</option>
         <option value="grn">Gene Regulatory Network</option>
+        <option value="dadras">Dadras (Complex Butterfly)</option>
+        <option value="thomas">Thomas (Cyclic Lattice)</option>
+        <option value="aizawa">Aizawa (Sphere Tube)</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ MINE</button>
