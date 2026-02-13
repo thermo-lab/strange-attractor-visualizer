@@ -6,7 +6,7 @@
    - Mobile-First Performance Tuning
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
-   - Multi-Engine: Poly, Symmetric
+   - Multi-Engine: Poly, Symmetric, NEW: Gene Regulatory Network (GRN)
    - FIXED: Sym Invariant Subspace Bug (Off-diagonal init)
    - FIXED: Density Color Shift (Normalized v_time by u_pointCount)
    - FIXED: Export Length (Decoupled Smoothness from Simulation Duration)
@@ -20,6 +20,7 @@
    - NEW: Export Unit Toggle (Inches vs Pixels)
    - NEW: Transparent Background Export (with Un-multiplied Alpha fix)
    - NEW: Swap Dimensions Button
+   - NEW: Gene Regulatory Network (GRN) Generator
 */
 
 // ==========================================
@@ -145,7 +146,25 @@ const workerCode = `
             if (genType === 'sym') {
                 coeffs = new Float32Array(10); 
                 for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
-            } else {
+            } 
+            else if (genType === 'grn') {
+                // 18 Parameters:
+                // 0-8: Weights (3x3 matrix)
+                // 9-11: Thresholds (theta)
+                // 12-14: Gains (mu)
+                // 15-17: Decay rates (gamma)
+                coeffs = new Float32Array(18);
+                // Weights: Mix of activation and inhibition
+                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 10) - 5; 
+                // Thresholds: Shift switching point
+                for(let i=9; i<12; i++) coeffs[i] = (Math.random() * 4) - 2;
+                // Gains: Steepness of switch (must be positive)
+                for(let i=12; i<15; i++) coeffs[i] = 1.0 + Math.random() * 5.0; 
+                // Decays: Must be positive
+                for(let i=15; i<18; i++) coeffs[i] = 0.1 + Math.random() * 0.9;
+            }
+            else {
+                // Poly (30 params)
                 coeffs = new Float32Array(30);
                 for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
             }
@@ -186,7 +205,14 @@ const workerCode = `
             if (genType === 'sym') {
                 child[idx] += (Math.random() < 0.5 ? 0.1 : -0.1); 
                 child[idx] = Math.round(child[idx]*10)/10;
-            } else {
+            } 
+            else if (genType === 'grn') {
+                const delta = (Math.random() - 0.5) * 0.5;
+                child[idx] += delta;
+                // Enforce constraints
+                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; // Gains and Decays must be positive
+            }
+            else {
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
 
@@ -208,31 +234,58 @@ const workerCode = `
         }
     }
 
+    function sigmoid(x) {
+        return 1.0 / (1.0 + Math.exp(-x));
+    }
+
     function checkChaosTail(c, genType) {
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
+        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
         let dt = (genType === 'sym') ? 0.01 : 0.02; 
         
+        // Cache parameters for loop performance
+        let p = c; // Alias
+        
+        // Poly Coeffs
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
+        
         if (genType === 'poly') {
            a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
            b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
            c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        } else {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
         }
 
         function calcD(px, py, pz, res) {
             if (genType === 'sym') {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = a0 + a1*py + a2*pz + a3*px + a4*py*py + a5*pz*pz + a6*px*px + a7*py*pz + a8*py*px + a9*pz*px;
-                res.dz = a0 + a1*pz + a2*px + a3*py + a4*pz*pz + a5*px*px + a6*py*py + a7*pz*px + a8*pz*py + a9*px*py;
-            } else {
+                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
+                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
+                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
+            } 
+            else if (genType === 'grn') {
+                // Gene Regulatory Network (Sigmoid Activation)
+                // Weights: 0-8, Thetas: 9-11, Gains: 12-14, Decays: 15-17
+                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
+                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
+                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
+                
+                // Sigmoid: 1 / (1 + exp(-mu * s))
+                // Optim: Precalc exp inside loop? No, JS JIT handles this well.
+                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
+                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
+                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
+                
+                res.dx = act1 - p[15]*px;
+                res.dy = act2 - p[16]*py;
+                res.dz = act3 - p[17]*pz;
+            }
+            else {
+                // Poly
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
                 res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
@@ -325,11 +378,13 @@ const workerCode = `
 
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
+        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let dt = (genType === 'sym') ? 0.005 : 0.015;
 
         // Cache Coeffs
+        let p = c; 
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -337,16 +392,26 @@ const workerCode = `
            a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
            b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
            c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        } else {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
         }
 
         function calcD(px, py, pz, res) {
             if (genType === 'sym') {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = a0 + a1*py + a2*pz + a3*px + a4*py*py + a5*pz*pz + a6*px*px + a7*py*pz + a8*py*px + a9*pz*px;
-                res.dz = a0 + a1*pz + a2*px + a3*py + a4*pz*pz + a5*px*px + a6*py*py + a7*pz*px + a8*pz*py + a9*px*py;
-            } else {
+                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
+                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
+                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
+            } 
+            else if (genType === 'grn') {
+                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
+                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
+                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
+                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
+                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
+                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
+                res.dx = act1 - p[15]*px;
+                res.dy = act2 - p[16]*py;
+                res.dz = act3 - p[17]*pz;
+            }
+            else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
                 res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
@@ -1027,6 +1092,7 @@ div.appendChild(createSection("GENERATION", `
     <select id="ui-gen-type" style="width:100%; margin-bottom:10px;">
         <option value="poly">Polynomial (Cloud/Wire)</option>
         <option value="sym">Symmetric (CodeParade)</option>
+        <option value="grn">Gene Regulatory Network</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ MINE</button>
