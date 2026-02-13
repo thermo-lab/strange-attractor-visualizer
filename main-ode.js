@@ -87,7 +87,6 @@ let renderScale = 1.0;
 let isInteracting = false; 
 let pendingResize = false; 
 
-
 // ==========================================
 // 1. THE WORKER (INTERPOLATION ENGINE)
 // ==========================================
@@ -150,30 +149,17 @@ const workerCode = `
             else if (genType === 'grn') {
                 // 18 Parameters:
                 coeffs = new Float32Array(18);
-                
-                // Weights (0-8): Interaction Matrix
-                // We want a mix of Activation (+) and Inhibition (-)
-                // A sparse-ish matrix can sometimes help, but dense is fine for 3D.
+                // Weights (0-8): -10 to 10
                 for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
-                
-                // Thresholds (9-11):
-                // Keep these closer to 0 so the system interacts near the center
+                // Thresholds (9-11): -2 to 2
                 for(let i=9; i<12; i++) coeffs[i] = (Math.random() * 4) - 2;
-                
-                // Gains (12-14):
-                // [TUNING] If too high (>10), we get square loops. 
-                // If too low (<2), we get fixed points. 
-                // Range 3.0 to 8.0 is the "Chaotic Sweet Spot".
+                // Gains (12-14): 3 to 9 (Chaos sweet spot)
                 for(let i=12; i<15; i++) coeffs[i] = 3.0 + Math.random() * 6.0; 
-                
-                // Decays (15-17):
-                // [TUNING] Timescale Separation is CRITICAL for Chaos.
-                // We force one to be fast, one slow, one medium-ish.
-                coeffs[15] = 0.5 + Math.random();       // Fast
-                coeffs[16] = 0.2 + Math.random() * 0.5; // Medium
-                coeffs[17] = 0.1 + Math.random() * 0.3; // Slow
-                
-                // Shuffle the decays so X isn't always the fast one
+                // Decays (15-17): Timescale separation
+                coeffs[15] = 0.5 + Math.random();       
+                coeffs[16] = 0.2 + Math.random() * 0.5; 
+                coeffs[17] = 0.1 + Math.random() * 0.3; 
+                // Shuffle decays
                 if(Math.random() > 0.5) { let t=coeffs[15]; coeffs[15]=coeffs[16]; coeffs[16]=t; }
                 if(Math.random() > 0.5) { let t=coeffs[16]; coeffs[16]=coeffs[17]; coeffs[17]=t; }
             }
@@ -221,11 +207,8 @@ const workerCode = `
                 child[idx] = Math.round(child[idx]*10)/10;
             } 
             else if (genType === 'grn') {
-                // Mutate weights more aggressively than decays
                 const range = (idx < 9) ? 2.0 : 0.5;
                 child[idx] += (Math.random() - 0.5) * range;
-                
-                // Enforce Positive Constraints for Gain/Decay
                 if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
             }
             else {
@@ -257,157 +240,10 @@ const workerCode = `
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
-        let dt = (genType === 'poly') ? 0.02 : 0.015; // Slightly faster step for screening
+        let dt = (genType === 'poly') ? 0.02 : 0.015;
         
-        let p = c; // Alias
-        // ... (Poly Coeffs Declaration skipped for brevity, same as before) ...
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        }
-
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
-                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
-                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
-            } 
-            else if (genType === 'grn') {
-                // Sigmoid Function with Thresholds
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * (p[0]*px + p[1]*py + p[2]*pz - p[9])));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * (p[3]*px + p[4]*py + p[5]*pz - p[10])));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * (p[6]*px + p[7]*py + p[8]*pz - p[11])));
-                
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
-            else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
-        }
-        
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        // 1. SETTLING PHASE (Fast Fail)
-        for(let i=0; i<1500; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            
-            // NaN or Infinity check
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        // 2. CHECK FOR FIXED POINT (Boring dot)
-        // If velocity is near zero, it's dead.
-        calcD(x, y, z, k1);
-        let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
-        if (speed < 0.001) return false; 
-
-        // 3. LYAPUNOV & SHAPE PHASE
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        // GRN needs very small voxels to detect structure
-        let voxRes = (genType === 'grn') ? 0.05 : ((genType === 'sym') ? 0.2 : 0.5);
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            // Lyapunov
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
-            
-            // Bounding Box
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        // GRN Specific Checks
-        if (genType === 'grn') {
-            // Filter out limit cycles (squares) by demanding positive Lyapunov
-            // Limit cycles usually have L ~ 0. Chaos has L > 0.
-            if (lyapunov < 0.005) return false; 
-            
-            // Check for flatness (2D Limit Cycle vs 3D Chaos)
-            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-            if (wX < 0.05 || wY < 0.05 || wZ < 0.05) return false; // Too flat
-            
-            // Check total volume (Avoid tiny loops)
-            if (visited.size < 100) return false; // Needs some complexity
-        } 
-        else {
-            // Standard checks for Poly/Sym
-            if (lyapunov < 0.001) return false;
-            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-            let minTotal = (genType === 'sym') ? 1.0 : 3.0; 
-            if ((wX + wY + wZ) < minTotal) return false;
-            if (visited.size < 25) return false;
-        }
-        
-        if (lyapunov > 2.0) return false; // Too unstable
-
-        return true;
-    }
-
-    function generateTrace(nSteps, density, seedOffset, c, genType) {
-        const totalPoints = nSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = (genType === 'poly') ? 0.015 : 0.01; 
-
-        // Cache Coeffs
         let p = c; 
-        // ... (Poly Vars skipped) ...
+        // ... (Poly Coeffs Declaration) ...
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -442,6 +278,151 @@ const workerCode = `
         }
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
+        
+        // 1. Settle
+        for(let i=0; i<1500; i++) {
+            calcD(x, y, z, k1);
+            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            if (Math.abs(x) > 100 || isNaN(x)) return false; 
+        }
+        
+        // 2. Lyapunov & Shape
+        sx = x + 0.000001; sy = y; sz = z;
+        let lyapunovSum = 0;
+        let d0 = 0.000001;
+        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
+        
+        let voxRes = (genType === 'grn') ? 0.05 : ((genType === 'sym') ? 0.2 : 0.5);
+        const visited = new Set();
+        let steps = 3000;
+        
+        for(let i=0; i<steps; i++) {
+            calcD(x, y, z, k1);
+            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+
+            calcD(sx, sy, sz, k1);
+            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
+            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
+            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
+            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+
+            if (Math.abs(x) > 100) return false;
+
+            let dx = x - sx, dy = y - sy, dz = z - sz;
+            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            if (d < 1e-15) return false; 
+            lyapunovSum += Math.log(d / d0);
+            let s = d0 / d;
+            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
+            
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+
+            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
+        }
+        
+        let lyapunov = lyapunovSum / steps;
+        
+        if (genType === 'grn') {
+            if (lyapunov < 0.005) return false; // Must be positive
+            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+            if (wX < 0.05 || wY < 0.05 || wZ < 0.05) return false; // Too flat
+            if (visited.size < 100) return false; // Too simple
+        } else {
+            if (lyapunov < 0.001) return false;
+            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+            let minTotal = (genType === 'sym') ? 1.0 : 3.0; 
+            if ((wX + wY + wZ) < minTotal) return false;
+            if (visited.size < 25) return false;
+        }
+        if (lyapunov > 2.0) return false;
+
+        return true;
+    }
+
+    function generateTrace(nSteps, density, seedOffset, c, genType) {
+        const totalPoints = nSteps * density; 
+        
+        let posData = new Float32Array(totalPoints * 3);
+        let metaData = new Float32Array(totalPoints * 2); 
+        const rand = mulberry32(seedOffset + 12345);
+
+        let x, y, z;
+        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
+        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
+        else { x = 0.05; y = 0.05; z = 0.05; }
+
+        let dt = (genType === 'poly') ? 0.015 : 0.01; 
+
+        // Cache Coeffs
+        let p = c; 
+        // ... (Poly Coeffs skipped) ...
+        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
+        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
+        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
+        if (genType === 'poly') {
+           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
+           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
+           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
+        }
+
+        function calcD(px, py, pz, res) {
+            if (genType === 'sym') {
+                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
+                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
+                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
+            } 
+            else if (genType === 'grn') {
+                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
+                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
+                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
+                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
+                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
+                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
+                res.dx = act1 - p[15]*px;
+                res.dy = act2 - p[16]*py;
+                res.dz = act3 - p[17]*pz;
+            }
+            else {
+                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
+                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
+                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
+            }
+        }
+        
+        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
+
+        const history = []; 
+        function stepPhysics() {
+            calcD(x, y, z, k1);
+            let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
+            let logVel = Math.log(speed + 1.0);
+            let curv = 0; 
+            
+            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+            
+            let nextX = x + (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            let nextY = y + (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            let nextZ = z + (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            
+            x = nextX; y = nextY; z = nextZ;
+            return { x:x, y:y, z:z, vel: logVel, curv: curv };
+        }
 
         // 1. Settle
         for(let i=0; i<2000; i++) stepPhysics();
@@ -491,7 +472,6 @@ const workerCode = `
         }
         let rms = Math.sqrt(sumDistSq / totalPoints);
         
-        // GRN needs specific zoom (lives in [0,1])
         let scaleTarget = (genType === 'grn') ? 0.8 : 0.5;
         if (rms > 0) {
             let s = scaleTarget / rms;
