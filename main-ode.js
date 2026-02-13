@@ -150,14 +150,32 @@ const workerCode = `
             else if (genType === 'grn') {
                 // 18 Parameters:
                 coeffs = new Float32Array(18);
-                // Weights: Strong interactions (-8 to 8)
-                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 16) - 8; 
-                // Thresholds: (-2 to 2) - Shift the switch point
+                
+                // Weights (0-8): Interaction Matrix
+                // We want a mix of Activation (+) and Inhibition (-)
+                // A sparse-ish matrix can sometimes help, but dense is fine for 3D.
+                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
+                
+                // Thresholds (9-11):
+                // Keep these closer to 0 so the system interacts near the center
                 for(let i=9; i<12; i++) coeffs[i] = (Math.random() * 4) - 2;
-                // Gains: High gain needed for steep switching (5 to 15)
-                for(let i=12; i<15; i++) coeffs[i] = 5.0 + Math.random() * 10.0; 
-                // Decays: (0.5 to 1.5) - Needs to be balanced with weights
-                for(let i=15; i<18; i++) coeffs[i] = 0.5 + Math.random() * 1.0;
+                
+                // Gains (12-14):
+                // [TUNING] If too high (>10), we get square loops. 
+                // If too low (<2), we get fixed points. 
+                // Range 3.0 to 8.0 is the "Chaotic Sweet Spot".
+                for(let i=12; i<15; i++) coeffs[i] = 3.0 + Math.random() * 6.0; 
+                
+                // Decays (15-17):
+                // [TUNING] Timescale Separation is CRITICAL for Chaos.
+                // We force one to be fast, one slow, one medium-ish.
+                coeffs[15] = 0.5 + Math.random();       // Fast
+                coeffs[16] = 0.2 + Math.random() * 0.5; // Medium
+                coeffs[17] = 0.1 + Math.random() * 0.3; // Slow
+                
+                // Shuffle the decays so X isn't always the fast one
+                if(Math.random() > 0.5) { let t=coeffs[15]; coeffs[15]=coeffs[16]; coeffs[16]=t; }
+                if(Math.random() > 0.5) { let t=coeffs[16]; coeffs[16]=coeffs[17]; coeffs[17]=t; }
             }
             else {
                 // Poly (30 params)
@@ -203,9 +221,12 @@ const workerCode = `
                 child[idx] = Math.round(child[idx]*10)/10;
             } 
             else if (genType === 'grn') {
-                const delta = (Math.random() - 0.5) * 0.5;
-                child[idx] += delta;
-                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; // Positive constraints
+                // Mutate weights more aggressively than decays
+                const range = (idx < 9) ? 2.0 : 0.5;
+                child[idx] += (Math.random() - 0.5) * range;
+                
+                // Enforce Positive Constraints for Gain/Decay
+                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
             }
             else {
                 child[idx] += (Math.random() - 0.5) * 0.1;
@@ -232,19 +253,14 @@ const workerCode = `
     function checkChaosTail(c, genType) {
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { 
-            // Random start essential for finding the basin in sigmoid space
-            x = Math.random(); y = Math.random(); z = Math.random(); 
-        }
+        else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
+        let dt = (genType === 'poly') ? 0.02 : 0.015; // Slightly faster step for screening
         
-        // GRN needs smaller time steps for stability
-        let dt = (genType === 'poly') ? 0.02 : (genType === 'grn' ? 0.01 : 0.01); 
-        
-        // Cache parameters
-        let p = c; 
+        let p = c; // Alias
+        // ... (Poly Coeffs Declaration skipped for brevity, same as before) ...
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -262,14 +278,10 @@ const workerCode = `
                 res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
             } 
             else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                
-                // Sigmoid
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
+                // Sigmoid Function with Thresholds
+                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * (p[0]*px + p[1]*py + p[2]*pz - p[9])));
+                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * (p[3]*px + p[4]*py + p[5]*pz - p[10])));
+                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * (p[6]*px + p[7]*py + p[8]*pz - p[11])));
                 
                 res.dx = act1 - p[15]*px;
                 res.dy = act2 - p[16]*py;
@@ -284,8 +296,8 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        // 1. Settle
-        for(let i=0; i<2000; i++) {
+        // 1. SETTLING PHASE (Fast Fail)
+        for(let i=0; i<1500; i++) {
             calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
             calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
@@ -293,22 +305,27 @@ const workerCode = `
             x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
             y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
             z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            
+            // NaN or Infinity check
             if (Math.abs(x) > 100 || isNaN(x)) return false; 
         }
+        
+        // 2. CHECK FOR FIXED POINT (Boring dot)
+        // If velocity is near zero, it's dead.
+        calcD(x, y, z, k1);
+        let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
+        if (speed < 0.001) return false; 
 
+        // 3. LYAPUNOV & SHAPE PHASE
         sx = x + 0.000001; sy = y; sz = z;
         let lyapunovSum = 0;
         let d0 = 0.000001;
         let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
         
-        // [FIX] Dynamic Voxel Size based on Type
-        let voxRes;
-        if (genType === 'sym') voxRes = 0.2;
-        else if (genType === 'grn') voxRes = 0.05; // Tiny grid for tiny attractor
-        else voxRes = 0.5;
-
+        // GRN needs very small voxels to detect structure
+        let voxRes = (genType === 'grn') ? 0.05 : ((genType === 'sym') ? 0.2 : 0.5);
         const visited = new Set();
-        let steps = 4000; // Run longer for better detection
+        let steps = 3000;
         
         for(let i=0; i<steps; i++) {
             calcD(x, y, z, k1);
@@ -329,6 +346,7 @@ const workerCode = `
 
             if (Math.abs(x) > 100) return false;
 
+            // Lyapunov
             let dx = x - sx, dy = y - sy, dz = z - sz;
             let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
             if (d < 1e-15) return false; 
@@ -336,6 +354,7 @@ const workerCode = `
             let s = d0 / d;
             sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
             
+            // Bounding Box
             minX = Math.min(minX, x); maxX = Math.max(maxX, x);
             minY = Math.min(minY, y); maxY = Math.max(maxY, y);
             minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
@@ -344,23 +363,30 @@ const workerCode = `
         }
         
         let lyapunov = lyapunovSum / steps;
-        if (lyapunov < 0.001) return false;
-        if (lyapunov > 2.0) return false; // Reject wild explosions
         
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+        // GRN Specific Checks
+        if (genType === 'grn') {
+            // Filter out limit cycles (squares) by demanding positive Lyapunov
+            // Limit cycles usually have L ~ 0. Chaos has L > 0.
+            if (lyapunov < 0.005) return false; 
+            
+            // Check for flatness (2D Limit Cycle vs 3D Chaos)
+            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+            if (wX < 0.05 || wY < 0.05 || wZ < 0.05) return false; // Too flat
+            
+            // Check total volume (Avoid tiny loops)
+            if (visited.size < 100) return false; // Needs some complexity
+        } 
+        else {
+            // Standard checks for Poly/Sym
+            if (lyapunov < 0.001) return false;
+            let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+            let minTotal = (genType === 'sym') ? 1.0 : 3.0; 
+            if ((wX + wY + wZ) < minTotal) return false;
+            if (visited.size < 25) return false;
+        }
         
-        // [FIX] Relax constraints for GRN
-        // GRN lives in [0,1] so minTotal must be small
-        let minTotal = (genType === 'grn') ? 0.3 : 3.0; 
-        if (genType === 'sym') minTotal = 1.0;
-
-        let minAxis = (genType === 'grn') ? 0.05 : 0.1;
-
-        if (wX < minAxis || wY < minAxis || wZ < minAxis) return false;
-        if ((wX + wY + wZ) < minTotal) return false;
-        
-        let vThreshold = (genType === 'sym') ? 50 : 25; 
-        if (visited.size < vThreshold) return false;
+        if (lyapunov > 2.0) return false; // Too unstable
 
         return true;
     }
@@ -381,6 +407,7 @@ const workerCode = `
 
         // Cache Coeffs
         let p = c; 
+        // ... (Poly Vars skipped) ...
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -416,25 +443,7 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
 
-        const history = []; 
-        function stepPhysics() {
-            calcD(x, y, z, k1);
-            let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
-            let logVel = Math.log(speed + 1.0);
-            let curv = 0; 
-            
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            
-            let nextX = x + (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            let nextY = y + (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            let nextZ = z + (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            
-            x = nextX; y = nextY; z = nextZ;
-            return { x:x, y:y, z:z, vel: logVel, curv: curv };
-        }
-
+        // 1. Settle
         for(let i=0; i<2000; i++) stepPhysics();
         for(let i=0; i<4; i++) history.push(stepPhysics());
 
@@ -463,13 +472,11 @@ const workerCode = `
             history.shift(); history.push(stepPhysics());
         }
         
-        // Normalize Velocity for Color
         if (maxVel > 0) {
             for(let i=0; i<totalPoints; i++) metaData[i*2] /= maxVel;
         }
         
-        // [FIX] Auto-Centering & Scaling for GRN
-        // GRN lives in ~[0,1]. We want to center it at 0 and scale it to ~1.5 for the camera.
+        // Auto-Centering & Scaling
         let sumX=0, sumY=0, sumZ=0;
         for(let i=0; i<totalPoints; i++) {
             sumX += posData[i*3]; sumY += posData[i*3+1]; sumZ += posData[i*3+2];
@@ -484,7 +491,7 @@ const workerCode = `
         }
         let rms = Math.sqrt(sumDistSq / totalPoints);
         
-        // GRN needs more zoom (smaller RMS), so we boost the scale factor.
+        // GRN needs specific zoom (lives in [0,1])
         let scaleTarget = (genType === 'grn') ? 0.8 : 0.5;
         if (rms > 0) {
             let s = scaleTarget / rms;
