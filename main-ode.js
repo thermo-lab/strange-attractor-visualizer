@@ -7,7 +7,8 @@
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
-   - FIXED: Tiled Export Seams (Noise continuity & Padding clipping)
+   - FIXED: Thomas Attractor Randomization (Uses deterministic seed for tiles)
+   - FIXED: Tiled Export Seams (Noise continuity)
    - FIXED: Export Alignment (Compensated Pan for Aspect Ratio changes)
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
@@ -151,7 +152,6 @@ const workerCode = `
                 else { coeffs[15]=d2; coeffs[16]=d3; coeffs[17]=d1; }
             }
             else if (genType === 'dadras') {
-                // Dadras: 5 Parameters
                 coeffs = new Float32Array(5);
                 coeffs[0] = 2.5 + Math.random();      
                 coeffs[1] = 2.0 + Math.random() * 1.5; 
@@ -160,29 +160,24 @@ const workerCode = `
                 coeffs[4] = 8.0 + Math.random() * 2;  
             }
             else if (genType === 'thomas') {
-                // Thomas: 1 Parameter (b)
                 coeffs = new Float32Array(1);
-                // Tightened range to avoid stable sinks (0.19 is sweet spot)
                 coeffs[0] = 0.18 + Math.random() * 0.04; 
             }
             else if (genType === 'aizawa') {
-                // Aizawa: 6 Parameters
                 coeffs = new Float32Array(6);
-                coeffs[0] = 0.95 + (Math.random()-0.5)*0.1; // a
-                coeffs[1] = 0.7  + (Math.random()-0.5)*0.1; // b
-                coeffs[2] = 0.6  + (Math.random()-0.5)*0.1; // c
-                coeffs[3] = 3.5  + (Math.random()-0.5)*0.5; // d
-                coeffs[4] = 0.25 + (Math.random()-0.5)*0.1; // e
-                coeffs[5] = 0.1  + (Math.random()-0.5)*0.05;// f
+                coeffs[0] = 0.95 + (Math.random()-0.5)*0.1;
+                coeffs[1] = 0.7  + (Math.random()-0.5)*0.1;
+                coeffs[2] = 0.6  + (Math.random()-0.5)*0.1;
+                coeffs[3] = 3.5  + (Math.random()-0.5)*0.5;
+                coeffs[4] = 0.25 + (Math.random()-0.5)*0.1;
+                coeffs[5] = 0.1  + (Math.random()-0.5)*0.05;
             }
             else {
-                // Poly (30 params)
                 coeffs = new Float32Array(30);
                 for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
             }
             
             if (checkChaosTail(coeffs, genType)) {
-                // Success - perform high quality render
                 const result = generateTrace(50000, 1, 0, coeffs, genType);
                 self.postMessage({
                     type: 'found', 
@@ -257,12 +252,11 @@ const workerCode = `
 
     function checkChaosTail(c, genType) {
         let x, y, z;
-        // Initial Conditions
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
         else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
         else if (genType === 'thomas') { 
-            // Random start prevents getting trapped in lattice sinks
+            // Random start allows checking for sinks, but must be consistent in render
             x = (Math.random() - 0.5) * 3.0; 
             y = (Math.random() - 0.5) * 3.0; 
             z = (Math.random() - 0.5) * 3.0; 
@@ -272,13 +266,12 @@ const workerCode = `
 
         let sx = x + 0.000001, sy = y, sz = z;
         
-        // Thomas needs fine steps. Poly needs coarse.
         let dt = (genType === 'poly') ? 0.05 : 0.015;
         if (genType === 'aizawa') dt = 0.01;
 
         let p = c; 
         
-        // Poly Coeffs Unpack (Optimization)
+        // ... (Poly Coeffs) ...
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -306,13 +299,11 @@ const workerCode = `
                 res.dz = act3 - p[17]*pz;
             }
             else if (genType === 'dadras') {
-                // p[0]=a, p[1]=b, p[2]=c, p[3]=d, p[4]=e
                 res.dx = py - p[0]*px + p[1]*py*pz;
                 res.dy = p[2]*py - px*pz + pz;
                 res.dz = p[3]*px*py - p[4]*pz;
             }
             else if (genType === 'thomas') {
-                // p[0] = b
                 res.dx = Math.sin(py) - p[0]*px;
                 res.dy = Math.sin(pz) - p[0]*py;
                 res.dz = Math.sin(px) - p[0]*pz;
@@ -332,8 +323,6 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        // 1. Settle
-        // Thomas needs much longer settle to rule out "slow sinks"
         let settleSteps = (genType === 'thomas') ? 5000 : 1500;
         
         for(let i=0; i<settleSteps; i++) {
@@ -347,13 +336,11 @@ const workerCode = `
             if (Math.abs(x) > 100 || isNaN(x)) return false; 
         }
         
-        // 2. Lyapunov & Shape
         sx = x + 0.000001; sy = y; sz = z;
         let lyapunovSum = 0;
         let d0 = 0.000001;
         let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
         
-        // VoxRes tuning for volume check
         let voxRes = 0.5;
         if(genType === 'grn') voxRes = 0.05;
         if(genType === 'thomas') voxRes = 0.2;
@@ -397,16 +384,12 @@ const workerCode = `
         
         let lyapunov = lyapunovSum / steps;
         
-        // Thresholds
         let minL = 0.001;
         let minVol = 25;
         let minWidth = 1.0;
 
         if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        
-        // Thomas Fix: Increased MinL to reject slow sinks, decreased Width/Vol for sparse lattice
         if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
 
         if (lyapunov < minL) return false;
@@ -431,10 +414,11 @@ const workerCode = `
         else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
         else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
         else if (genType === 'thomas') { 
-            // Randomized start for renderer too
-            x = (Math.random() - 0.5) * 3.0; 
-            y = (Math.random() - 0.5) * 3.0; 
-            z = (Math.random() - 0.5) * 3.0;
+            // [FIXED] Use deterministic rand(), NOT Math.random()
+            // This ensures every export tile uses the EXACT SAME start point
+            x = (rand() - 0.5) * 3.0; 
+            y = (rand() - 0.5) * 3.0; 
+            z = (rand() - 0.5) * 3.0;
         }
         else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
@@ -444,7 +428,8 @@ const workerCode = `
 
         // Cache Coeffs
         let p = c; 
-        // Poly Coeffs
+        
+        // ... (Poly Coeffs) ...
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
