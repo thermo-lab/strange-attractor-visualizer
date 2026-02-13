@@ -8,6 +8,7 @@
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
    - FIXED: Tiled Export Seams (Noise continuity & Padding clipping)
+   - FIXED: Export Alignment (Compensated Pan for Aspect Ratio changes)
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
@@ -1925,6 +1926,9 @@ async function startTiledExport(mode = 'download') {
     const screenAspect = canvas.width / canvas.height;
     const printAspect = totalW / totalH;
     
+    // Auto-Compensate PanX so export matches screen center despite aspect change
+    const compensatedPanX = camPanX * (printAspect / screenAspect);
+
     const meta = serializeState(); 
     const exportID = meta.id;
 
@@ -1978,7 +1982,7 @@ async function startTiledExport(mode = 'download') {
                         genType: currentGenType
                     });
                 });
-                renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter);
+                renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, compensatedPanX);
             }
             
             gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
