@@ -149,19 +149,15 @@ const workerCode = `
             } 
             else if (genType === 'grn') {
                 // 18 Parameters:
-                // 0-8: Weights (3x3 matrix)
-                // 9-11: Thresholds (theta)
-                // 12-14: Gains (mu)
-                // 15-17: Decay rates (gamma)
                 coeffs = new Float32Array(18);
-                // Weights: Mix of activation and inhibition
-                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 10) - 5; 
-                // Thresholds: Shift switching point
-                for(let i=9; i<12; i++) coeffs[i] = (Math.random() * 4) - 2;
-                // Gains: Steepness of switch (must be positive)
-                for(let i=12; i<15; i++) coeffs[i] = 1.0 + Math.random() * 5.0; 
-                // Decays: Must be positive
-                for(let i=15; i<18; i++) coeffs[i] = 0.1 + Math.random() * 0.9;
+                // Weights: Stronger interactions (-10 to 10)
+                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
+                // Thresholds: (-3 to 3)
+                for(let i=9; i<12; i++) coeffs[i] = (Math.random() * 6) - 3;
+                // Gains: NEED HIGH GAIN FOR CHAOS (5 to 15)
+                for(let i=12; i<15; i++) coeffs[i] = 5.0 + Math.random() * 10.0; 
+                // Decays: (0.2 to 1.0)
+                for(let i=15; i<18; i++) coeffs[i] = 0.2 + Math.random() * 0.8;
             }
             else {
                 // Poly (30 params)
@@ -207,10 +203,9 @@ const workerCode = `
                 child[idx] = Math.round(child[idx]*10)/10;
             } 
             else if (genType === 'grn') {
-                const delta = (Math.random() - 0.5) * 0.5;
+                const delta = (Math.random() - 0.5) * 1.0; // Larger mutation steps
                 child[idx] += delta;
-                // Enforce constraints
-                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; // Gains and Decays must be positive
+                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
             }
             else {
                 child[idx] += (Math.random() - 0.5) * 0.1;
@@ -234,23 +229,22 @@ const workerCode = `
         }
     }
 
-    function sigmoid(x) {
-        return 1.0 / (1.0 + Math.exp(-x));
-    }
-
     function checkChaosTail(c, genType) {
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
+        else if (genType === 'grn') { 
+            // Random start to find basin of attraction
+            x = Math.random(); y = Math.random(); z = Math.random(); 
+        }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
-        let dt = (genType === 'sym') ? 0.01 : 0.02; 
         
-        // Cache parameters for loop performance
-        let p = c; // Alias
+        // GRN needs smaller steps due to steep sigmoid gradients
+        let dt = (genType === 'poly') ? 0.02 : 0.01; 
         
-        // Poly Coeffs
+        // Cache parameters
+        let p = c; 
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -268,24 +262,17 @@ const workerCode = `
                 res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
             } 
             else if (genType === 'grn') {
-                // Gene Regulatory Network (Sigmoid Activation)
-                // Weights: 0-8, Thetas: 9-11, Gains: 12-14, Decays: 15-17
                 let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
                 let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
                 let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                
-                // Sigmoid: 1 / (1 + exp(-mu * s))
-                // Optim: Precalc exp inside loop? No, JS JIT handles this well.
                 let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
                 let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
                 let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                
                 res.dx = act1 - p[15]*px;
                 res.dy = act2 - p[16]*py;
                 res.dz = act3 - p[17]*pz;
             }
             else {
-                // Poly
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
                 res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
@@ -294,6 +281,7 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
+        // 1. Settle into attractor
         for(let i=0; i<1000; i++) {
             calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
@@ -313,6 +301,7 @@ const workerCode = `
         const visited = new Set();
         let voxRes = (genType === 'sym') ? 0.2 : 0.5;
         
+        // 2. Measure characteristics
         let steps = 2000;
         for(let i=0; i<steps; i++) {
             calcD(x, y, z, k1);
@@ -354,8 +343,12 @@ const workerCode = `
         if (lyapunov > 2.0) return false;
         
         let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        let minTotal = (genType === 'sym') ? 1.0 : 3.0; 
-        if (wX < 0.1 || wY < 0.1 || wZ < 0.1) return false;
+        
+        // [FIX] Relax size constraints for GRN because it lives in [0,1] box
+        let minTotal = (genType === 'sym') ? 1.0 : (genType === 'grn' ? 0.2 : 3.0);
+        let minAxis = (genType === 'grn') ? 0.01 : 0.1;
+
+        if (wX < minAxis || wY < minAxis || wZ < minAxis) return false;
         if ((wX + wY + wZ) < minTotal) return false;
         
         let vThreshold = (genType === 'sym') ? 50 : 25; 
@@ -381,7 +374,7 @@ const workerCode = `
         else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
-        let dt = (genType === 'sym') ? 0.005 : 0.015;
+        let dt = (genType === 'poly') ? 0.015 : 0.01; 
 
         // Cache Coeffs
         let p = c; 
