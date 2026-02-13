@@ -269,7 +269,7 @@ const workerCode = `
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
-        let dt = (genType === 'poly' || genType === 'thomas') ? 0.05 : 0.015;
+        let dt = (genType === 'poly') ? 0.05 : 0.015;
         if (genType === 'aizawa') dt = 0.01;
 
         let p = c; 
@@ -425,7 +425,7 @@ const workerCode = `
         else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
-        let dt = (genType === 'poly' || genType === 'thomas') ? 0.05 : 0.015; 
+        let dt = (genType === 'poly') ? 0.05 : 0.015; 
         if(genType === 'aizawa') dt = 0.01;
 
         // Cache Coeffs
