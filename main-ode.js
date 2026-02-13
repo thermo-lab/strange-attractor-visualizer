@@ -147,21 +147,35 @@ const workerCode = `
                 for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
             } 
             else if (genType === 'grn') {
-                // 18 Parameters
+                // 18 Parameters:
                 coeffs = new Float32Array(18);
-                // Weights (0-8): High variance
-                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 24) - 12; 
                 
-                // Thresholds (9-11): Auto-center based on weights
+                // 1. Weights (0-8): Interaction Matrix
+                // Tuned Range: +/- 10.0 (Strong interactions)
+                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
+                
+                // 2. Thresholds (9-11): Auto-balancing
+                // Centers the sigmoid switching point based on incoming weights
                 coeffs[9]  = (coeffs[0] + coeffs[1] + coeffs[2]) * 0.5 + (Math.random() - 0.5);
                 coeffs[10] = (coeffs[3] + coeffs[4] + coeffs[5]) * 0.5 + (Math.random() - 0.5);
                 coeffs[11] = (coeffs[6] + coeffs[7] + coeffs[8]) * 0.5 + (Math.random() - 0.5);
 
-                // Gains (12-14): Steepness
-                for(let i=12; i<15; i++) coeffs[i] = 4.0 + Math.random() * 8.0; 
+                // 3. Gains (12-14): 
+                // Chaos Sweet Spot: 2.5 to 7.0
+                for(let i=12; i<15; i++) coeffs[i] = 2.5 + Math.random() * 4.5; 
                 
-                // Decays (15-17): Timescale separation
-                for(let i=15; i<18; i++) coeffs[i] = 1.0; 
+                // 4. Decays (15-17): [CRITICAL] Timescale Separation
+                // We force distinct speeds: Fast, Medium, Slow.
+                // This "frustration" causes the trajectory to fold over itself.
+                let d1 = 0.2 + Math.random() * 0.2; // Slow
+                let d2 = 0.6 + Math.random() * 0.3; // Medium
+                let d3 = 1.0 + Math.random() * 0.5; // Fast
+                
+                // Shuffle assignment
+                let r = Math.random();
+                if(r < 0.33) { coeffs[15]=d1; coeffs[16]=d2; coeffs[17]=d3; }
+                else if(r < 0.66) { coeffs[15]=d3; coeffs[16]=d1; coeffs[17]=d2; }
+                else { coeffs[15]=d2; coeffs[16]=d3; coeffs[17]=d1; }
             }
             else {
                 // Poly (30 params)
@@ -297,6 +311,7 @@ const workerCode = `
         let d0 = 0.000001;
         let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
         
+        // [TUNED] VoxRes 0.05 is good for [0,1] scale
         let voxRes = (genType === 'grn') ? 0.05 : ((genType === 'sym') ? 0.2 : 0.5);
         const visited = new Set();
         let steps = 3000;
@@ -337,10 +352,13 @@ const workerCode = `
         let lyapunov = lyapunovSum / steps;
         
         if (genType === 'grn') {
-            if (lyapunov < 0.005) return false; 
+            // [TUNED] Lowered threshold to 0.0015 to catch "weak" chaos
+            if (lyapunov < 0.0015) return false; 
             let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
+            // Relaxed flatness check
             if (wX < 0.05 || wY < 0.05 || wZ < 0.05) return false; 
-            if (visited.size < 100) return false; 
+            // Relaxed volume check
+            if (visited.size < 60) return false; 
         } else {
             if (lyapunov < 0.001) return false;
             let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
@@ -405,7 +423,7 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        // [FIX] Added missing history initialization
+        // [FIX] RESTORED HISTORY ARRAY
         const history = [];
 
         function stepPhysics() {
