@@ -150,14 +150,14 @@ const workerCode = `
             else if (genType === 'grn') {
                 // 18 Parameters:
                 coeffs = new Float32Array(18);
-                // Weights: Stronger interactions (-10 to 10)
-                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
-                // Thresholds: (-3 to 3)
-                for(let i=9; i<12; i++) coeffs[i] = (Math.random() * 6) - 3;
-                // Gains: NEED HIGH GAIN FOR CHAOS (5 to 15)
+                // Weights: Strong interactions (-8 to 8)
+                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 16) - 8; 
+                // Thresholds: (-2 to 2) - Shift the switch point
+                for(let i=9; i<12; i++) coeffs[i] = (Math.random() * 4) - 2;
+                // Gains: High gain needed for steep switching (5 to 15)
                 for(let i=12; i<15; i++) coeffs[i] = 5.0 + Math.random() * 10.0; 
-                // Decays: (0.2 to 1.0)
-                for(let i=15; i<18; i++) coeffs[i] = 0.2 + Math.random() * 0.8;
+                // Decays: (0.5 to 1.5) - Needs to be balanced with weights
+                for(let i=15; i<18; i++) coeffs[i] = 0.5 + Math.random() * 1.0;
             }
             else {
                 // Poly (30 params)
@@ -203,9 +203,9 @@ const workerCode = `
                 child[idx] = Math.round(child[idx]*10)/10;
             } 
             else if (genType === 'grn') {
-                const delta = (Math.random() - 0.5) * 1.0; // Larger mutation steps
+                const delta = (Math.random() - 0.5) * 0.5;
                 child[idx] += delta;
-                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
+                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; // Positive constraints
             }
             else {
                 child[idx] += (Math.random() - 0.5) * 0.1;
@@ -233,15 +233,15 @@ const workerCode = `
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { 
-            // Random start to find basin of attraction
+            // Random start essential for finding the basin in sigmoid space
             x = Math.random(); y = Math.random(); z = Math.random(); 
         }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
         
-        // GRN needs smaller steps due to steep sigmoid gradients
-        let dt = (genType === 'poly') ? 0.02 : 0.01; 
+        // GRN needs smaller time steps for stability
+        let dt = (genType === 'poly') ? 0.02 : (genType === 'grn' ? 0.01 : 0.01); 
         
         // Cache parameters
         let p = c; 
@@ -265,9 +265,12 @@ const workerCode = `
                 let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
                 let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
                 let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
+                
+                // Sigmoid
                 let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
                 let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
                 let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
+                
                 res.dx = act1 - p[15]*px;
                 res.dy = act2 - p[16]*py;
                 res.dz = act3 - p[17]*pz;
@@ -281,8 +284,8 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        // 1. Settle into attractor
-        for(let i=0; i<1000; i++) {
+        // 1. Settle
+        for(let i=0; i<2000; i++) {
             calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
             calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
@@ -297,12 +300,16 @@ const workerCode = `
         let lyapunovSum = 0;
         let d0 = 0.000001;
         let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        let diagonalSum = 0;
-        const visited = new Set();
-        let voxRes = (genType === 'sym') ? 0.2 : 0.5;
         
-        // 2. Measure characteristics
-        let steps = 2000;
+        // [FIX] Dynamic Voxel Size based on Type
+        let voxRes;
+        if (genType === 'sym') voxRes = 0.2;
+        else if (genType === 'grn') voxRes = 0.05; // Tiny grid for tiny attractor
+        else voxRes = 0.5;
+
+        const visited = new Set();
+        let steps = 4000; // Run longer for better detection
+        
         for(let i=0; i<steps; i++) {
             calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
@@ -333,31 +340,27 @@ const workerCode = `
             minY = Math.min(minY, y); maxY = Math.max(maxY, y);
             minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
 
-            if (genType === 'sym') diagonalSum += (Math.abs(x-y) + Math.abs(y-z) + Math.abs(z-x));
-            if (i % 10 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
+            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
         }
         
         let lyapunov = lyapunovSum / steps;
-        
         if (lyapunov < 0.001) return false;
-        if (lyapunov > 2.0) return false;
+        if (lyapunov > 2.0) return false; // Reject wild explosions
         
         let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
         
-        // [FIX] Relax size constraints for GRN because it lives in [0,1] box
-        let minTotal = (genType === 'sym') ? 1.0 : (genType === 'grn' ? 0.2 : 3.0);
-        let minAxis = (genType === 'grn') ? 0.01 : 0.1;
+        // [FIX] Relax constraints for GRN
+        // GRN lives in [0,1] so minTotal must be small
+        let minTotal = (genType === 'grn') ? 0.3 : 3.0; 
+        if (genType === 'sym') minTotal = 1.0;
+
+        let minAxis = (genType === 'grn') ? 0.05 : 0.1;
 
         if (wX < minAxis || wY < minAxis || wZ < minAxis) return false;
         if ((wX + wY + wZ) < minTotal) return false;
         
         let vThreshold = (genType === 'sym') ? 50 : 25; 
         if (visited.size < vThreshold) return false;
-        
-        if (genType === 'sym') {
-            let avgDiag = diagonalSum / steps;
-            if (avgDiag < 0.08) return false;
-        }
 
         return true;
     }
@@ -460,15 +463,19 @@ const workerCode = `
             history.shift(); history.push(stepPhysics());
         }
         
+        // Normalize Velocity for Color
         if (maxVel > 0) {
             for(let i=0; i<totalPoints; i++) metaData[i*2] /= maxVel;
         }
         
+        // [FIX] Auto-Centering & Scaling for GRN
+        // GRN lives in ~[0,1]. We want to center it at 0 and scale it to ~1.5 for the camera.
         let sumX=0, sumY=0, sumZ=0;
         for(let i=0; i<totalPoints; i++) {
             sumX += posData[i*3]; sumY += posData[i*3+1]; sumZ += posData[i*3+2];
         }
         let avgX = sumX/totalPoints, avgY = sumY/totalPoints, avgZ = sumZ/totalPoints;
+        
         let sumDistSq = 0;
         for(let i=0; i<totalPoints; i++) {
             let px = posData[i*3]-avgX; let py = posData[i*3+1]-avgY; let pz = posData[i*3+2]-avgZ;
@@ -476,8 +483,11 @@ const workerCode = `
             sumDistSq += px*px + py*py + pz*pz;
         }
         let rms = Math.sqrt(sumDistSq / totalPoints);
+        
+        // GRN needs more zoom (smaller RMS), so we boost the scale factor.
+        let scaleTarget = (genType === 'grn') ? 0.8 : 0.5;
         if (rms > 0) {
-            let s = 0.5 / rms;
+            let s = scaleTarget / rms;
             for(let i=0; i<posData.length; i++) posData[i] *= s;
         }
 
