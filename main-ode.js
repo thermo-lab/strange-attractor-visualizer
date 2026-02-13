@@ -6,8 +6,8 @@
    - Mobile-First Performance Tuning
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
-   - Multi-Engine: Poly, Symmetric, GRN
-   - NEW ENGINES: Dadras, Thomas, Aizawa
+   - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
+   - FIXED: Thomas Attractor "Single Dot" & UI "Undefined" Bug
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
@@ -151,22 +151,18 @@ const workerCode = `
             }
             else if (genType === 'dadras') {
                 // Dadras: 5 Parameters
-                // dx = y - ax + byz
-                // dy = cy - xz + z
-                // dz = dxy - ez
                 coeffs = new Float32Array(5);
-                coeffs[0] = 2.5 + Math.random();      // a ~ 3
-                coeffs[1] = 2.0 + Math.random() * 1.5; // b ~ 2.7
-                coeffs[2] = 1.5 + Math.random();      // c ~ 1.7
-                coeffs[3] = 1.5 + Math.random();      // d ~ 2
-                coeffs[4] = 8.0 + Math.random() * 2;  // e ~ 9
+                coeffs[0] = 2.5 + Math.random();      
+                coeffs[1] = 2.0 + Math.random() * 1.5; 
+                coeffs[2] = 1.5 + Math.random();      
+                coeffs[3] = 1.5 + Math.random();      
+                coeffs[4] = 8.0 + Math.random() * 2;  
             }
             else if (genType === 'thomas') {
                 // Thomas: 1 Parameter (b)
-                // Cyclic Sine system
                 coeffs = new Float32Array(1);
-                // Chaos usually in 0.18 to 0.22 range
-                coeffs[0] = 0.15 + Math.random() * 0.1; 
+                // Tightened range to avoid stable sinks (0.19 is sweet spot)
+                coeffs[0] = 0.18 + Math.random() * 0.04; 
             }
             else if (genType === 'aizawa') {
                 // Aizawa: 6 Parameters
@@ -264,16 +260,18 @@ const workerCode = `
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
         else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        // Randomize start to avoid getting stuck in lattice "sinks"
         else if (genType === 'thomas') { 
-          x = (Math.random() * 6) - 3; 
-          y = (Math.random() * 6) - 3; 
-          z = (Math.random() * 6) - 3; 
+            // Random start prevents getting trapped in lattice sinks
+            x = (Math.random() - 0.5) * 3.0; 
+            y = (Math.random() - 0.5) * 3.0; 
+            z = (Math.random() - 0.5) * 3.0; 
         }
         else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
+        
+        // Thomas needs fine steps. Poly needs coarse.
         let dt = (genType === 'poly') ? 0.05 : 0.015;
         if (genType === 'aizawa') dt = 0.01;
 
@@ -319,7 +317,6 @@ const workerCode = `
                 res.dz = Math.sin(px) - p[0]*pz;
             }
             else if (genType === 'aizawa') {
-                // p[0]=a, p[1]=b, p[2]=c, p[3]=d, p[4]=e, p[5]=f
                 let x2 = px*px; let y2 = py*py;
                 res.dx = (pz - p[1])*px - p[3]*py;
                 res.dy = p[3]*px + (pz - p[1])*py;
@@ -335,7 +332,10 @@ const workerCode = `
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
         // 1. Settle
-        for(let i=0; i<1500; i++) {
+        // Thomas needs much longer settle to rule out "slow sinks"
+        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
+        
+        for(let i=0; i<settleSteps; i++) {
             calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
             calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
@@ -402,7 +402,10 @@ const workerCode = `
         let minWidth = 1.0;
 
         if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.0001; minWidth=2.0; minVol=50; } 
+        
+        // Thomas Fix: Increased MinL to reject slow sinks, decreased Width/Vol for sparse lattice
+        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
+        
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
 
         if (lyapunov < minL) return false;
@@ -426,7 +429,12 @@ const workerCode = `
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
         else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { x = 1.0; y = 1.0; z = 1.0; }
+        else if (genType === 'thomas') { 
+            // Randomized start for renderer too
+            x = (Math.random() - 0.5) * 3.0; 
+            y = (Math.random() - 0.5) * 3.0; 
+            z = (Math.random() - 0.5) * 3.0;
+        }
         else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
@@ -1649,23 +1657,20 @@ worker.onmessage = (e) => {
             return;
         }
 
-        uiStatus.innerText = `FOUND! (${e.data.attempts} attempts)`;
-        uiStatus.style.color = "#00ff00";
-        currentCoeffs = new Float32Array(e.data.coeffs);
-        
-        // [FIXED LOGIC]
+        // FIXED: Only update attempts when finding NEW parameters (mine/mutate)
+        // This prevents the 'render' pass from overwriting the success message.
         if (e.data.source === 'mine' || e.data.source === 'mutate') {
+            uiStatus.innerText = `FOUND! (${e.data.attempts} attempts)`;
+            uiStatus.style.color = "#00ff00";
+            currentCoeffs = new Float32Array(e.data.coeffs);
             
-            // Only reset camera/color for fresh 'mines'. 
-            // Keep view steady for 'mutations' so you can see the change.
             if (e.data.source === 'mine') {
                 colorSeed = [Math.random(), Math.random(), Math.random()];
                 camPanX = 0; camPanY = 0; camZoom = 2.0; 
                 currentQuat = qIdentity();
             }
             
-            // ALWAYS trigger the high-res render to match slider settings
-            uiStatus.innerText = "Refining...";
+            uiStatus.innerText = `Refining... (${e.data.attempts})`;
             worker.postMessage({ 
                 type: 'render', 
                 coeffs: currentCoeffs, 
