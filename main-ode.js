@@ -7,7 +7,7 @@
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
-   - FIXED: Thomas Attractor "Single Dot" & UI "Undefined" Bug
+   - FIXED: Tiled Export Seams (Noise continuity & Padding clipping)
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
@@ -860,7 +860,8 @@ void main() {
         float t = smoothstep(0.0, 1.5*u_bg_params.z, distance(auv, cnt));
         vec3 bg = mix(u_bg_a, u_bg_b, t);
         
-        bg += (hash(gl_FragCoord.xy)-0.5) * (u_noise*0.05);
+        // FIXED: USE GLOBAL COORDS FOR NOISE TO PREVENT TILE SEAMS
+        bg += (hash(gl_FragCoord.xy + u_off)-0.5) * (u_noise*0.05);
 
         vec3 finalRGB;
         if (u_invert == 1) finalRGB = bg * (1.0 - energy); 
@@ -885,7 +886,9 @@ void main() {
         
         c = vec4(finalRGB, 1.0);
         float ditherStrength = max(u_noise * 0.2, 0.004); 
-        c.rgb += triangularNoise(gl_FragCoord.xy) * ditherStrength;
+        
+        // FIXED: USE GLOBAL COORDS FOR DITHER TOO
+        c.rgb += triangularNoise(gl_FragCoord.xy + u_off) * ditherStrength;
     }
 }`;
 
@@ -1888,7 +1891,8 @@ async function startTiledExport(mode = 'download') {
     const ctx = masterCanvas.getContext('2d');
     
     const TILE_SIZE = 2048; 
-    const PADDING = 64; 
+    // Increased padding to handle large aperture/blur without clipping
+    const PADDING = 512; 
     const cols = Math.ceil(totalW / TILE_SIZE);
     const rows = Math.ceil(totalH / TILE_SIZE);
     
