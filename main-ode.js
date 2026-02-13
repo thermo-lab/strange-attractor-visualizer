@@ -147,28 +147,20 @@ const workerCode = `
                 for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
             } 
             else if (genType === 'grn') {
-                // 18 Parameters:
+                // 18 Parameters
                 coeffs = new Float32Array(18);
-                
-                // 1. Weights (0-8): Interaction Matrix
-                // High variance is needed for chaos.
+                // Weights (0-8): High variance
                 for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 24) - 12; 
                 
-                // 2. Thresholds (9-11): [CRITICAL FIX]
-                // Don't pick random thresholds. Calculate them to center the system.
-                // If a neuron receives input from A, B, C, we want the threshold 
-                // to be roughly half the sum of those weights (assuming avg input is 0.5).
-                // This keeps the sigmoid "sensitive" instead of saturated.
+                // Thresholds (9-11): Auto-center based on weights
                 coeffs[9]  = (coeffs[0] + coeffs[1] + coeffs[2]) * 0.5 + (Math.random() - 0.5);
                 coeffs[10] = (coeffs[3] + coeffs[4] + coeffs[5]) * 0.5 + (Math.random() - 0.5);
                 coeffs[11] = (coeffs[6] + coeffs[7] + coeffs[8]) * 0.5 + (Math.random() - 0.5);
 
-                // 3. Gains (12-14): 
-                // Needs to be steep enough to be non-linear, but not infinite.
+                // Gains (12-14): Steepness
                 for(let i=12; i<15; i++) coeffs[i] = 4.0 + Math.random() * 8.0; 
                 
-                // 4. Decays (15-17): 
-                // Standard unity decay helps stability for this specific centering strategy
+                // Decays (15-17): Timescale separation
                 for(let i=15; i<18; i++) coeffs[i] = 1.0; 
             }
             else {
@@ -248,7 +240,7 @@ const workerCode = `
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
-        let dt = (genType === 'poly') ? 0.02 : 0.02; // GRN can handle 0.02 with unity decay
+        let dt = (genType === 'poly') ? 0.02 : 0.02;
         
         let p = c; 
         // ... (Poly Coeffs Declaration) ...
@@ -305,7 +297,6 @@ const workerCode = `
         let d0 = 0.000001;
         let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
         
-        // GRN needs very small voxels
         let voxRes = (genType === 'grn') ? 0.05 : ((genType === 'sym') ? 0.2 : 0.5);
         const visited = new Set();
         let steps = 3000;
@@ -346,9 +337,8 @@ const workerCode = `
         let lyapunov = lyapunovSum / steps;
         
         if (genType === 'grn') {
-            if (lyapunov < 0.005) return false; // Must be chaotic
+            if (lyapunov < 0.005) return false; 
             let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-            // Relaxed size constraints for centering method
             if (wX < 0.05 || wY < 0.05 || wZ < 0.05) return false; 
             if (visited.size < 100) return false; 
         } else {
@@ -414,8 +404,10 @@ const workerCode = `
         }
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
+        
+        // [FIX] Added missing history initialization
+        const history = [];
 
-        // [FIX] Restored function definition
         function stepPhysics() {
             calcD(x, y, z, k1);
             let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
