@@ -1582,11 +1582,18 @@ worker.onmessage = (e) => {
         uiStatus.style.color = "#00ff00";
         currentCoeffs = new Float32Array(e.data.coeffs);
         
-        if (e.data.source === 'mine') {
-            colorSeed = [Math.random(), Math.random(), Math.random()];
-            camPanX = 0; camPanY = 0; camZoom = 2.0; 
-            currentQuat = qIdentity();
+        // [FIXED LOGIC]
+        if (e.data.source === 'mine' || e.data.source === 'mutate') {
             
+            // Only reset camera/color for fresh 'mines'. 
+            // Keep view steady for 'mutations' so you can see the change.
+            if (e.data.source === 'mine') {
+                colorSeed = [Math.random(), Math.random(), Math.random()];
+                camPanX = 0; camPanY = 0; camZoom = 2.0; 
+                currentQuat = qIdentity();
+            }
+            
+            // ALWAYS trigger the high-res render to match slider settings
             uiStatus.innerText = "Refining...";
             worker.postMessage({ 
                 type: 'render', 
