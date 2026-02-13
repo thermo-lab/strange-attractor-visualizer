@@ -264,7 +264,12 @@ const workerCode = `
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
         else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { x = 1.0; y = 1.0; z = 1.0; }
+        // Randomize start to avoid getting stuck in lattice "sinks"
+        else if (genType === 'thomas') { 
+          x = (Math.random() * 6) - 3; 
+          y = (Math.random() * 6) - 3; 
+          z = (Math.random() * 6) - 3; 
+        }
         else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
