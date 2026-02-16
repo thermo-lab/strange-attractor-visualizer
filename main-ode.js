@@ -3,10 +3,10 @@
    - ODE Flow Mining (Chaos Hunter)
    - RK4 Integration (High Accuracy)
    - Mobile-Responsive UI (Sidebar vs Bottom Drawer)
-   - High-DPI / Retina Display Support (Fixed Input Coordinates)
+   - High-DPI / Retina Display Support
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
-   - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
+   - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa, Rikitake, Chua, Hindmarsh-Rose, Moore-Spiegel
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3 (Badge Hidden)
 */
 
@@ -181,7 +181,39 @@ const workerCode = `
                 coeffs[4] = 0.25 + (Math.random()-0.5)*0.1;
                 coeffs[5] = 0.1  + (Math.random()-0.5)*0.05;
             }
+            else if (genType === 'rikitake') {
+                coeffs = new Float32Array(2);
+                coeffs[0] = 2.0 + (Math.random() - 0.5); // mu ~ 2.0
+                coeffs[1] = 5.0 + (Math.random() - 0.5) * 3.0; // a ~ 5.0 (controls flip speed)
+            }
+            else if (genType === 'chua') {
+                coeffs = new Float32Array(4);
+                coeffs[0] = 15.6 + (Math.random() - 0.5); // alpha ~ 15.6 (Classic Chaos)
+                coeffs[1] = 28.0 + (Math.random() - 0.5) * 5.0; // beta ~ 28.0
+                coeffs[2] = -1.143 + (Math.random() - 0.5) * 0.2; // m0
+                coeffs[3] = -0.714 + (Math.random() - 0.5) * 0.2; // m1
+            }
+            else if (genType === 'hindmarsh') {
+                // Highly sensitive. 
+                // a=1, b=3, c=1, d=5, s=4, xr=-1.6 are standard constants for neurons.
+                // We mine 'r' (burst frequency) and 'I' (input current).
+                coeffs = new Float32Array(8);
+                coeffs[0] = 1.0; 
+                coeffs[1] = 3.0; 
+                coeffs[2] = 1.0; 
+                coeffs[3] = 5.0; 
+                coeffs[4] = 0.004 + (Math.random() * 0.005); // r: very slow timescale
+                coeffs[5] = 4.0;
+                coeffs[6] = -1.6;
+                coeffs[7] = 2.5 + Math.random() * 1.5; // I: Current. 3.25 is classic chaos.
+            }
+            else if (genType === 'moore') {
+                coeffs = new Float32Array(2);
+                coeffs[0] = 10.0 + (Math.random() - 0.5) * 8.0; // Gamma (T)
+                coeffs[1] = 100.0 + (Math.random() - 0.5) * 20.0; // R
+            }
             else {
+                // Poly
                 coeffs = new Float32Array(30);
                 for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
             }
@@ -228,6 +260,19 @@ const workerCode = `
                 child[idx] += (Math.random() - 0.5) * range;
                 if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
             }
+            else if (genType === 'rikitake') {
+                child[idx] += (Math.random() - 0.5) * 0.1;
+            }
+            else if (genType === 'chua') {
+                child[idx] += (Math.random() - 0.5) * 0.2;
+            }
+            else if (genType === 'hindmarsh') {
+                if (idx === 4) child[idx] += (Math.random() - 0.5) * 0.0005; // Tiny mutation for r
+                else if (idx === 7) child[idx] += (Math.random() - 0.5) * 0.1; // Small mutation for I
+            }
+            else if (genType === 'moore') {
+                child[idx] += (Math.random() - 0.5) * 2.0; // Large steps for large parameters
+            }
             else if (genType === 'dadras') {
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
@@ -270,15 +315,23 @@ const workerCode = `
             z = (Math.random() - 0.5) * 3.0; 
         }
         else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
+        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
+        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
+        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
+        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
         
-        let dt = (genType === 'poly') ? 0.05 : 0.015;
+        let dt = 0.015;
+        if (genType === 'poly') dt = 0.05;
         if (genType === 'aizawa') dt = 0.01;
+        if (genType === 'moore') dt = 0.002; // Needs tiny steps
+        if (genType === 'hindmarsh') dt = 0.01;
 
         let p = c; 
         
+        // Cache poly for perf
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -304,6 +357,33 @@ const workerCode = `
                 res.dx = act1 - p[15]*px;
                 res.dy = act2 - p[16]*py;
                 res.dz = act3 - p[17]*pz;
+            }
+            else if (genType === 'rikitake') {
+                // p[0]=mu, p[1]=a
+                res.dx = -p[0]*px + py*pz;
+                res.dy = -p[0]*py + px*(p[1] - pz);
+                res.dz = 1.0 - px*py;
+            }
+            else if (genType === 'chua') {
+                // p[0]=alpha, p[1]=beta, p[2]=m0, p[3]=m1
+                let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
+                res.dx = p[0]*(py - px - h);
+                res.dy = px - py + pz;
+                res.dz = -p[1]*py;
+            }
+            else if (genType === 'hindmarsh') {
+                // x=0, y=1, z=2. Coeffs: a=0, b=1, c=2, d=3, r=4, s=5, xr=6, I=7
+                let x2 = px*px;
+                let x3 = x2*px;
+                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
+                res.dy = p[2] - p[3]*x2 - py;
+                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
+            }
+            else if (genType === 'moore') {
+                // p[0]=Gamma, p[1]=R
+                res.dx = py;
+                res.dy = pz;
+                res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
             }
             else if (genType === 'dadras') {
                 res.dx = py - p[0]*px + p[1]*py*pz;
@@ -331,7 +411,8 @@ const workerCode = `
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
         let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        
+        if(genType === 'moore') settleSteps = 3000;
+
         for(let i=0; i<settleSteps; i++) {
             calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
@@ -352,6 +433,7 @@ const workerCode = `
         if(genType === 'grn') voxRes = 0.05;
         if(genType === 'thomas') voxRes = 0.2;
         if(genType === 'aizawa') voxRes = 0.1;
+        if(genType === 'moore') voxRes = 0.5;
 
         const visited = new Set();
         let steps = 3000;
@@ -398,6 +480,7 @@ const workerCode = `
         if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
         if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
+        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
 
         if (lyapunov < minL) return false;
         
@@ -426,10 +509,17 @@ const workerCode = `
             z = (rand() - 0.5) * 3.0;
         }
         else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
+        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
+        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
+        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
+        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
-        let dt = (genType === 'poly') ? 0.05 : 0.015; 
-        if(genType === 'aizawa') dt = 0.01;
+        let dt = 0.015;
+        if (genType === 'poly') dt = 0.05;
+        if (genType === 'aizawa') dt = 0.01;
+        if (genType === 'moore') dt = 0.002;
+        if (genType === 'hindmarsh') dt = 0.01;
 
         // Cache Coeffs
         let p = c; 
@@ -459,6 +549,29 @@ const workerCode = `
                 res.dx = act1 - p[15]*px;
                 res.dy = act2 - p[16]*py;
                 res.dz = act3 - p[17]*pz;
+            }
+            else if (genType === 'rikitake') {
+                res.dx = -p[0]*px + py*pz;
+                res.dy = -p[0]*py + px*(p[1] - pz);
+                res.dz = 1.0 - px*py;
+            }
+            else if (genType === 'chua') {
+                let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
+                res.dx = p[0]*(py - px - h);
+                res.dy = px - py + pz;
+                res.dz = -p[1]*py;
+            }
+            else if (genType === 'hindmarsh') {
+                let x2 = px*px;
+                let x3 = x2*px;
+                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
+                res.dy = p[2] - p[3]*x2 - py;
+                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
+            }
+            else if (genType === 'moore') {
+                res.dx = py;
+                res.dy = pz;
+                res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
             }
             else if (genType === 'dadras') {
                 res.dx = py - p[0]*px + p[1]*py*pz;
@@ -559,6 +672,9 @@ const workerCode = `
         if (genType === 'dadras') scaleTarget = 0.35; // Large range
         if (genType === 'thomas') scaleTarget = 0.5;
         if (genType === 'aizawa') scaleTarget = 0.6;
+        if (genType === 'chua') scaleTarget = 0.2; // Chua is tiny
+        if (genType === 'hindmarsh') scaleTarget = 0.25; 
+        if (genType === 'moore') scaleTarget = 0.8; 
 
         if (rms > 0) {
             let s = scaleTarget / rms;
@@ -1270,6 +1386,10 @@ div.appendChild(createSection("GENERATION", `
         <option value="dadras">Dadras (Complex Butterfly)</option>
         <option value="thomas">Thomas (Cyclic Lattice)</option>
         <option value="aizawa">Aizawa (Sphere Tube)</option>
+        <option value="rikitake">Rikitake (Double Spiral)</option>
+        <option value="chua">Chua (Double Scroll)</option>
+        <option value="hindmarsh">Hindmarsh-Rose (Neuron)</option>
+        <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ MINE</button>
@@ -2132,6 +2252,14 @@ async function startTiledExport(mode = 'download') {
             if (blendMode === 'ADD') bMode = 1;
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
 
+            const checkGuide = document.getElementById('ui-show-guide');
+            const valW = parseFloat(document.getElementById('ui-print-w').value) || 1;
+            const valH = parseFloat(document.getElementById('ui-print-h').value) || 1;
+            const printAspect = valW / valH;
+            
+            gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_show_guide"), checkGuide.checked ? 1 : 0);
+            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_print_aspect"), printAspect);
+            
             gl.drawArrays(gl.TRIANGLES, 0, 3);
             
             const pixels = new Uint8Array(tileW * tileH * 4);
