@@ -115,10 +115,23 @@ const workerCode = `
                v0 * t + p1;
     }
 
+    function safePostMessage(msg, transfers) {
+        // Defensive check to prevent "Failed to convert value to object"
+        if (transfers) {
+            for (let i = 0; i < transfers.length; i++) {
+                if (!transfers[i]) {
+                    console.error("Worker: Attempted to transfer null/undefined buffer.");
+                    return; // Abort send
+                }
+            }
+        }
+        self.postMessage(msg, transfers);
+    }
+
     function renderExisting(data) {
         const c = new Float32Array(data.coeffs);
         const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType); 
-        self.postMessage({
+        safePostMessage({
             type: 'found', 
             source: 'render', 
             coeffs: c, 
@@ -183,34 +196,31 @@ const workerCode = `
             }
             else if (genType === 'rikitake') {
                 coeffs = new Float32Array(2);
-                coeffs[0] = 2.0 + (Math.random() * 3.0); // mu: widened to find more chaos
-                coeffs[1] = 3.0 + (Math.random() * 6.0); // a: widened to find flipping regimes
+                coeffs[0] = 1.0 + (Math.random() * 6.0); // mu
+                coeffs[1] = 2.0 + (Math.random() * 8.0); // a
             }
             else if (genType === 'chua') {
                 coeffs = new Float32Array(4);
-                // Widen search to find things other than the classic double scroll
-                coeffs[0] = 9.0 + Math.random() * 10.0;  // alpha: range 9-19 covers many regimes
-                coeffs[1] = 20.0 + Math.random() * 15.0; // beta: range 20-35
-                coeffs[2] = -1.143 + (Math.random() - 0.5) * 0.4; 
-                coeffs[3] = -0.714 + (Math.random() - 0.5) * 0.4; 
+                coeffs[0] = 8.0 + Math.random() * 12.0;  // alpha
+                coeffs[1] = 20.0 + Math.random() * 20.0; // beta
+                coeffs[2] = -1.143 + (Math.random() - 0.5) * 0.5; 
+                coeffs[3] = -0.714 + (Math.random() - 0.5) * 0.5; 
             }
             else if (genType === 'hindmarsh') {
-                // Tuned to find the 'bursting' chaotic regime
                 coeffs = new Float32Array(8);
                 coeffs[0] = 1.0; 
                 coeffs[1] = 3.0; 
                 coeffs[2] = 1.0; 
                 coeffs[3] = 5.0; 
-                coeffs[4] = 0.001 + (Math.random() * 0.009); // r: slow timescale
+                coeffs[4] = 0.001 + (Math.random() * 0.01); // r
                 coeffs[5] = 4.0;
                 coeffs[6] = -1.6;
-                // I (current) is the chaos dial. 2.9 to 3.4 is the sweet spot.
-                coeffs[7] = 2.9 + Math.random() * 0.5; 
+                coeffs[7] = 2.0 + Math.random() * 2.0; // I
             }
             else if (genType === 'moore') {
                 coeffs = new Float32Array(2);
-                coeffs[0] = 26.0 + (Math.random() - 0.5) * 10.0; // Gamma (T)
-                coeffs[1] = 100.0 + (Math.random() - 0.5) * 20.0; // R
+                coeffs[0] = 5.0 + (Math.random() * 45.0); // Gamma: 5 to 50
+                coeffs[1] = 50.0 + (Math.random() * 100.0); // R: 50 to 150
             }
             else {
                 // Poly
@@ -219,8 +229,9 @@ const workerCode = `
             }
             
             if (checkChaosTail(coeffs, genType)) {
+                // Use fewer steps for mining check to save CPU
                 const result = generateTrace(50000, 1, 0, coeffs, genType);
-                self.postMessage({
+                safePostMessage({
                     type: 'found', 
                     source: 'mine', 
                     coeffs: coeffs, 
@@ -261,18 +272,17 @@ const workerCode = `
                 if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
             }
             else if (genType === 'rikitake') {
-                child[idx] += (Math.random() - 0.5) * 0.2;
-            }
-            else if (genType === 'chua') {
                 child[idx] += (Math.random() - 0.5) * 0.5;
             }
+            else if (genType === 'chua') {
+                child[idx] += (Math.random() - 0.5) * 1.0;
+            }
             else if (genType === 'hindmarsh') {
-                // Focus mutation on I (7) and r (4)
-                if (idx === 7) child[idx] += (Math.random() - 0.5) * 0.05;
-                else if (idx === 4) child[idx] += (Math.random() - 0.5) * 0.0001;
+                if (idx === 7) child[idx] += (Math.random() - 0.5) * 0.1;
+                else if (idx === 4) child[idx] += (Math.random() - 0.5) * 0.001;
             }
             else if (genType === 'moore') {
-                child[idx] += (Math.random() - 0.5) * 1.0; 
+                child[idx] += (Math.random() - 0.5) * 2.0; 
             }
             else if (genType === 'dadras') {
                 child[idx] += (Math.random() - 0.5) * 0.1;
@@ -289,7 +299,7 @@ const workerCode = `
 
             if (checkChaosTail(child, genType)) {
                 const result = generateTrace(50000, 1, 0, child, genType);
-                self.postMessage({
+                safePostMessage({
                     type: 'found', 
                     source: 'mutate', 
                     coeffs: child, 
@@ -327,8 +337,8 @@ const workerCode = `
         let dt = 0.015;
         if (genType === 'poly') dt = 0.05;
         if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0005; // FIX: Critical for Moore Stability
-        if (genType === 'hindmarsh') dt = 0.01;
+        if (genType === 'moore') dt = 0.0002; // Super small steps for Moore
+        if (genType === 'hindmarsh') dt = 0.02;
 
         let p = c; 
         
@@ -365,14 +375,12 @@ const workerCode = `
                 res.dz = 1.0 - px*py;
             }
             else if (genType === 'chua') {
-                // p[0]=alpha, p[1]=beta, p[2]=m0, p[3]=m1
                 let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
                 res.dx = p[0]*(py - px - h);
                 res.dy = px - py + pz;
                 res.dz = -p[1]*py;
             }
             else if (genType === 'hindmarsh') {
-                // x=0, y=1, z=2. Coeffs: a=0, b=1, c=2, d=3, r=4, s=5, xr=6, I=7
                 let x2 = px*px;
                 let x3 = x2*px;
                 res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
@@ -380,7 +388,6 @@ const workerCode = `
                 res.dz = p[4]*(p[5]*(px - p[6]) - pz);
             }
             else if (genType === 'moore') {
-                // p[0]=Gamma, p[1]=R
                 res.dx = py;
                 res.dy = pz;
                 res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
@@ -411,7 +418,7 @@ const workerCode = `
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
         let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 3000;
+        if(genType === 'moore') settleSteps = 5000; // Needs more time to stabilize
 
         for(let i=0; i<settleSteps; i++) {
             calcD(x, y, z, k1);
@@ -480,7 +487,7 @@ const workerCode = `
         if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
         if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
+        if (genType === 'moore') { minL=0.002; minWidth=2.0; minVol=50; } // Relaxed constraints
 
         if (lyapunov < minL) return false;
         
@@ -518,8 +525,8 @@ const workerCode = `
         let dt = 0.015;
         if (genType === 'poly') dt = 0.05;
         if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0005; // FIX: Critical for Moore Stability
-        if (genType === 'hindmarsh') dt = 0.01;
+        if (genType === 'moore') dt = 0.0002; // Small step for high energy system
+        if (genType === 'hindmarsh') dt = 0.02;
 
         // Cache Coeffs
         let p = c; 
@@ -598,86 +605,90 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 3000;
+        const history = [];
 
-        for(let i=0; i<settleSteps; i++) {
+        function stepPhysics() {
             calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
+            let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
+            let logVel = Math.log(speed + 1.0);
+            let curv = 0; 
             
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+            
+            let nextX = x + (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            let nextY = y + (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            let nextZ = z + (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            
+            x = nextX; y = nextY; z = nextZ;
+            return { x:x, y:y, z:z, vel: logVel, curv: curv };
+        }
 
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
+        // 1. Settle
+        for(let i=0; i<2000; i++) stepPhysics();
+        for(let i=0; i<4; i++) history.push(stepPhysics());
+
+        let outIdx = 0;
+        let maxVel = 0;
+
+        for(let i=0; i<nSteps; i++) {
+            let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
+            if (Math.abs(p2.x) > 1000 || isNaN(p2.x)) break;
+
+            for(let d=0; d<density; d++) {
+                if (outIdx >= totalPoints) break;
+                let t = d / density; 
+                let px = catmullRom(p0.x, p1.x, p2.x, p3.x, t);
+                let py = catmullRom(p0.y, p1.y, p2.y, p3.y, t);
+                let pz = catmullRom(p0.z, p1.z, p2.z, p3.z, t);
+                
+                let pVel = p1.vel + (p2.vel - p1.vel) * t;
+                let pCurv = p1.curv + (p2.curv - p1.curv) * t;
+                if (pVel > maxVel) maxVel = pVel;
+
+                posData[outIdx*3] = px; posData[outIdx*3+1] = py; posData[outIdx*3+2] = pz;
+                metaData[outIdx*2] = pVel; metaData[outIdx*2+1] = pCurv;
+                outIdx++;
+            }
+            history.shift(); history.push(stepPhysics());
         }
         
-        let lyapunov = lyapunovSum / steps;
+        if (maxVel > 0) {
+            for(let i=0; i<totalPoints; i++) metaData[i*2] /= maxVel;
+        }
         
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
-
-        if (lyapunov < minL) return false;
+        // Auto-Centering & Scaling
+        let sumX=0, sumY=0, sumZ=0;
+        for(let i=0; i<totalPoints; i++) {
+            sumX += posData[i*3]; sumY += posData[i*3+1]; sumZ += posData[i*3+2];
+        }
+        let avgX = sumX/totalPoints, avgY = sumY/totalPoints, avgZ = sumZ/totalPoints;
         
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
+        let sumDistSq = 0;
+        for(let i=0; i<totalPoints; i++) {
+            let px = posData[i*3]-avgX; let py = posData[i*3+1]-avgY; let pz = posData[i*3+2]-avgZ;
+            posData[i*3] = px; posData[i*3+1] = py; posData[i*3+2] = pz;
+            sumDistSq += px*px + py*py + pz*pz;
+        }
+        let rms = Math.sqrt(sumDistSq / totalPoints);
+        
+        // GRN needs specific zoom (lives in [0,1])
+        let scaleTarget = 0.5;
+        if (genType === 'grn') scaleTarget = 0.8;
+        if (genType === 'dadras') scaleTarget = 0.35; // Large range
+        if (genType === 'thomas') scaleTarget = 0.5;
+        if (genType === 'aizawa') scaleTarget = 0.6;
+        if (genType === 'chua') scaleTarget = 0.2; 
+        if (genType === 'hindmarsh') scaleTarget = 0.25; 
+        if (genType === 'moore') scaleTarget = 0.8; 
 
-        return true;
+        if (rms > 0) {
+            let s = scaleTarget / rms;
+            for(let i=0; i<posData.length; i++) posData[i] *= s;
+        }
+
+        return { buffer: posData.buffer, metaBuffer: metaData.buffer };
     }
 `;
 
