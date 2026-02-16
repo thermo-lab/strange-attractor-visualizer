@@ -2,14 +2,11 @@
    Features: 
    - ODE Flow Mining (Chaos Hunter)
    - RK4 Integration (High Accuracy)
-   - "Tail Analysis" Filtering (Fixes Dots & Lines)
-   - Mobile-First Performance Tuning
+   - Mobile-Responsive UI (Sidebar vs Bottom Drawer)
+   - Smart Performance Tuning (Auto-downgrade for mobile)
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
-   - FIXED: Thomas Attractor Randomization (Uses deterministic seed for tiles)
-   - FIXED: Tiled Export Seams (Noise continuity)
-   - FIXED: Export Alignment (Compensated Pan for Aspect Ratio changes)
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
@@ -22,11 +19,15 @@ const MAX_ALLOCATION = 50000000;
 const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
 const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; 
 
+// --- DETECT MOBILE ---
+const isMobile = window.matchMedia("(max-width: 768px)").matches;
+
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
 let gpuRenderedDensity = 1.0;
 let gaussianTex = null;
 
+// Defaults (Will be tuned below if mobile)
 let camZoom = 2.0; 
 let camPanX = 0, camPanY = 0;
 let currentQuat = [0, 0, 0, 1]; 
@@ -36,22 +37,22 @@ let colorMode = 0;
 let colorSeed = [0.0, 0.0, 0.0];
 
 // Defaults for Glow Mode
-let blendMode = 'ADD';       
+let blendMode = 'ADD';        
 let isInverted = false;      
 let incBlack = true;
 let incWhite = true;
 
 // Default Background to Dark/Black
-let bgA = [0.0, 0.0, 0.0];   
-let bgB = [0.1, 0.1, 0.1];   
+let bgA = [0.0, 0.0, 0.0];    
+let bgB = [0.1, 0.1, 0.1];    
 let bgParams = [0.0, 0.5, 1.0]; 
 
-// High Quality Defaults
+// Performance Defaults
 let currentPhysicsSteps = 1000000; 
 let currentOpacity = 0.02;          
 let currentIntensity = 2.0;  
 let currentGamma = 1.8;
-let currentNoise = 0.05;     
+let currentNoise = 0.05;      
 let currentPointSize = 1.0;
 let currentDensity = 1;
 let currentJitter = 0.5;
@@ -61,6 +62,14 @@ let isExporting = false;
 // Export State
 let exportUnit = 'inches'; // 'inches' or 'pixels'
 let exportTransparent = false; 
+
+// --- MOBILE SAFE DEFAULTS ---
+if (isMobile) {
+    currentPhysicsSteps = 250000; // Cap at 250k for safety
+    currentPointSize = 2.5;       // Thicker lines for small high-DPI screens
+    camZoom = 1.5;                // Zoom out slightly
+    currentDensity = 1;           // Keep density low
+}
 
 // --- VIEWPORT FBO REFS ---
 let viewFbo = null;
@@ -73,7 +82,7 @@ let isRolling = false;
 let lastX = 0, lastY = 0;
 let lastDist = 0;
 let lastAngle = 0;
-let renderScale = 1.0;     
+let renderScale = 1.0;      
 let isInteracting = false; 
 let pendingResize = false; 
 
@@ -153,11 +162,11 @@ const workerCode = `
             }
             else if (genType === 'dadras') {
                 coeffs = new Float32Array(5);
-                coeffs[0] = 2.5 + Math.random();      
+                coeffs[0] = 2.5 + Math.random();       
                 coeffs[1] = 2.0 + Math.random() * 1.5; 
-                coeffs[2] = 1.5 + Math.random();      
-                coeffs[3] = 1.5 + Math.random();      
-                coeffs[4] = 8.0 + Math.random() * 2;  
+                coeffs[2] = 1.5 + Math.random();       
+                coeffs[3] = 1.5 + Math.random();       
+                coeffs[4] = 8.0 + Math.random() * 2;   
             }
             else if (genType === 'thomas') {
                 coeffs = new Float32Array(1);
@@ -256,7 +265,6 @@ const workerCode = `
         else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
         else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
         else if (genType === 'thomas') { 
-            // Random start allows checking for sinks, but must be consistent in render
             x = (Math.random() - 0.5) * 3.0; 
             y = (Math.random() - 0.5) * 3.0; 
             z = (Math.random() - 0.5) * 3.0; 
@@ -271,7 +279,6 @@ const workerCode = `
 
         let p = c; 
         
-        // ... (Poly Coeffs) ...
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -414,8 +421,6 @@ const workerCode = `
         else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
         else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
         else if (genType === 'thomas') { 
-            // [FIXED] Use deterministic rand(), NOT Math.random()
-            // This ensures every export tile uses the EXACT SAME start point
             x = (rand() - 0.5) * 3.0; 
             y = (rand() - 0.5) * 3.0; 
             z = (rand() - 0.5) * 3.0;
@@ -429,7 +434,6 @@ const workerCode = `
         // Cache Coeffs
         let p = c; 
         
-        // ... (Poly Coeffs) ...
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -591,7 +595,7 @@ uniform float u_aspect;
 uniform float u_pointSize;
 uniform vec4 u_tileBounds; 
 uniform vec2 u_resolution; 
-uniform float u_jitter;     
+uniform float u_jitter;      
 uniform float u_pointCount; 
 
 uniform float u_focusDist; 
@@ -1124,40 +1128,131 @@ function applyState(data) {
 }
 
 // ==========================================
-// 4. UI GENERATION
+// 4. UI GENERATION (RESPONSIVE)
 // ==========================================
+
+// 1. Inject CSS for Responsive Layout
+const style = document.createElement('style');
+style.textContent = `
+    /* --- DESKTOP (DEFAULT) --- */
+    #colorControls {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: 240px;
+        max-height: 90vh;
+        background: rgba(0,0,0,0.85);
+        border: 1px solid #0f0;
+        font-family: monospace;
+        overflow-y: auto;
+        z-index: 999;
+        display: block; /* Visible by default on desktop */
+    }
+
+    /* Section Headers */
+    .ui-header {
+        background: #222;
+        color: #fff;
+        padding: 5px 10px;
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid #444;
+        font-weight: bold;
+    }
+
+    .ui-content {
+        padding: 10px;
+        display: none; /* Collapsed by default */
+    }
+
+    /* Toggle Button (Gear) */
+    #ui-toggle-btn {
+        position: absolute;
+        top: 20px;
+        right: 270px; /* Sit to the left of the panel */
+        background: #000;
+        color: #0f0;
+        border: 1px solid #0f0;
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+        cursor: pointer;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        user-select: none;
+    }
+
+    /* --- MOBILE OVERRIDES --- */
+    @media (max-width: 600px) {
+        #colorControls {
+            top: auto;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            max-height: 45vh; /* Bottom sheet */
+            border: none;
+            border-top: 2px solid #0f0;
+        }
+
+        /* Move toggle button to bottom right floating */
+        #ui-toggle-btn {
+            top: auto;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #000;
+        }
+
+        /* Fat Finger Targets */
+        input[type=range], button, select {
+            min-height: 35px; 
+            margin-bottom: 5px;
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// 2. Create UI Containers
+const toggleBtn = document.createElement('div');
+toggleBtn.id = 'ui-toggle-btn';
+toggleBtn.innerText = '⚙️';
+toggleBtn.onclick = (e) => {
+    e.stopPropagation(); // Prevent canvas click
+    const panel = document.getElementById('colorControls');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+    } else {
+        panel.style.display = 'none';
+    }
+};
+document.body.appendChild(toggleBtn);
+
 const div = document.createElement('div');
 div.id = 'colorControls';
-div.style.position = 'absolute';
-div.style.top = '20px';
-div.style.right = '20px';
-div.style.zIndex = '999'; 
-div.style.background = 'rgba(0,0,0,0.85)';
-div.style.width = '240px';
-div.style.border = '1px solid #0f0';
-div.style.fontFamily = 'monospace';
-div.style.maxHeight = '90vh';
-div.style.overflowY = 'auto';
+// On mobile, maybe start hidden so they see the art first?
+if (isMobile) div.style.display = 'none'; 
 
 function createSection(title, contentHTML) {
     const section = document.createElement('div');
     const header = document.createElement('div');
+    header.className = 'ui-header';
     header.innerHTML = `▶ ${title}`;
-    header.style.background = '#222';
-    header.style.color = '#fff';
-    header.style.padding = '5px 10px';
-    header.style.cursor = 'pointer';
-    header.style.userSelect = 'none';
-    header.style.borderBottom = '1px solid #444';
+    
     const content = document.createElement('div');
-    content.style.padding = '10px';
-    content.style.display = 'none'; 
+    content.className = 'ui-content';
     content.innerHTML = contentHTML;
+
     header.onclick = () => {
         const isClosed = content.style.display === 'none';
         content.style.display = isClosed ? 'block' : 'none';
         header.innerHTML = `${isClosed ? '▼' : '▶'} ${title}`;
     };
+    
     section.appendChild(header);
     section.appendChild(content);
     return section;
@@ -1753,7 +1848,7 @@ async function startPrintCheckout(blob) {
     peechoLink.href = "https://www.peecho.com"; 
     peechoLink.target = "_blank"; 
 
-    peechoLink.className = "peecho-print-button";    
+    peechoLink.className = "peecho-print-button";     
     peechoLink.setAttribute('data-src', signedUrl);
     peechoLink.setAttribute('data-thumbnail', signedUrl);
     peechoLink.setAttribute('data-filetype', 'image');
@@ -1946,7 +2041,7 @@ async function startTiledExport(mode = 'download') {
             const nH = tileH / totalH;
 
             gl.useProgram(particleProgram);
-      
+       
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.ONE, gl.ONE); 
 
@@ -2061,10 +2156,12 @@ function resetRenderState() {
 }
 
 function renderFrame() {
-    const targetScale = isInteracting ? 0.5 : 1.0;
+    const desktopScale = isInteracting ? 0.5 : 1.0;
+    const mobileScale = 0.75; 
+    let renderScaleTarget = isMobile ? mobileScale : desktopScale;
     
-    if (renderScale !== targetScale) {
-        renderScale = targetScale;
+    if (Math.abs(renderScale - renderScaleTarget) > 0.01) {
+        renderScale = renderScaleTarget;
         resizeViewportFBO();
     }
     
