@@ -3,11 +3,11 @@
    - ODE Flow Mining (Chaos Hunter)
    - RK4 Integration (High Accuracy)
    - Mobile-Responsive UI (Sidebar vs Bottom Drawer)
-   - High-DPI / Retina Display Support
+   - High-DPI / Retina Display Support (Fixed Input Coordinates)
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
-   - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
+   - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3 (Badge Hidden)
 */
 
 // ==========================================
@@ -330,7 +330,6 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        // --- ERROR FIX: Variable name must be local ---
         let settleSteps = (genType === 'thomas') ? 5000 : 1500;
         
         for(let i=0; i<settleSteps; i++) {
@@ -357,7 +356,6 @@ const workerCode = `
         const visited = new Set();
         let steps = 3000;
         
-        // --- ERROR FIX: Ensure loop uses 'steps', NOT 'nSteps' ---
         for(let i=0; i<steps; i++) {
             calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
@@ -433,6 +431,7 @@ const workerCode = `
         let dt = (genType === 'poly') ? 0.05 : 0.015; 
         if(genType === 'aizawa') dt = 0.01;
 
+        // Cache Coeffs
         let p = c; 
         
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
@@ -1136,6 +1135,9 @@ function applyState(data) {
 // 1. Inject CSS for Responsive Layout
 const style = document.createElement('style');
 style.textContent = `
+    /* Hide reCAPTCHA Badge but stay compliant */
+    .grecaptcha-badge { visibility: hidden; }
+
     /* --- DESKTOP (DEFAULT) --- */
     #colorControls {
         position: absolute;
@@ -1149,11 +1151,13 @@ style.textContent = `
         overflow-y: auto;
         z-index: 999;
         display: block; /* Visible by default on desktop */
+        backdrop-filter: blur(5px);
     }
 
     /* Section Headers */
     .ui-header {
-        background: #222;
+        background: rgba(34, 34, 34, 0.85); /* Semi-transparent */
+        backdrop-filter: blur(5px);
         color: #fff;
         padding: 5px 10px;
         cursor: pointer;
@@ -1167,11 +1171,11 @@ style.textContent = `
         display: none; /* Collapsed by default */
     }
 
-    /* Toggle Button (Gear) - Fixed Bottom Left */
+    /* Toggle Button (Gear) - Fixed Bottom Right */
     #ui-toggle-btn {
         position: absolute;
         bottom: 20px;
-        left: 20px;
+        right: 20px;
         background: #000;
         color: #0f0;
         border: 1px solid #0f0;
@@ -1389,7 +1393,13 @@ div.appendChild(createSection("EXPORT", `
 `));
 
 const footer = document.createElement('div');
-footer.innerHTML = `<div id="ui-main-status" style="color:#ffff00; font-size:12px; margin-top:10px; text-align:center;">Initialized</div><div id="ui-error-log" style="color:red; font-size:10px; margin-top:5px;"></div>`;
+footer.innerHTML = `
+    <div id="ui-main-status" style="color:#ffff00; font-size:12px; margin-top:10px; text-align:center;">Initialized</div>
+    <div id="ui-error-log" style="color:red; font-size:10px; margin-top:5px;"></div>
+    <div style="font-size:10px; color:#777; margin-top:10px; line-height:1.2;">
+        This site is protected by reCAPTCHA and the Google <a href="https://policies.google.com/privacy" target="_blank" style="color:#999">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" style="color:#999">Terms of Service</a> apply.
+    </div>
+`;
 div.appendChild(footer);
 
 const oldUI = document.getElementById('colorControls');
@@ -1579,20 +1589,36 @@ function applyRoll(angleDelta) {
     currentQuat = qNormalize(currentQuat);
 }
 
+// ==========================================
+// CORRECTED EVENT LISTENERS FOR HIGH-DPI
+// ==========================================
+function getRelativeTouchPos(touch, element) {
+    const rect = element.getBoundingClientRect();
+    return {
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
+        cx: rect.width / 2,
+        cy: rect.height / 2,
+        width: rect.width,
+        height: rect.height
+    };
+}
+
 canvas.addEventListener('touchstart', (e) => {
     if(isExporting) return;
     isInteracting = true;
     e.preventDefault();
     if (e.touches.length === 1) {
-        lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const dist = Math.hypot(lastX - cx, lastY - cy);
-        const maxDist = Math.min(canvas.width, canvas.height) / 2;
+        const p = getRelativeTouchPos(e.touches[0], canvas);
+        lastX = p.x; lastY = p.y;
+        
+        const dist = Math.hypot(p.x - p.cx, p.y - p.cy);
+        const maxDist = Math.min(p.width, p.height) / 2;
+        
         if (dist > maxDist * 0.8) {
             isRolling = true;
             isDragging = false;
-            lastAngle = Math.atan2(lastY - cy, lastX - cx);
+            lastAngle = Math.atan2(p.y - p.cy, p.x - p.cx);
         } else {
             isRolling = false;
             isDragging = true;
@@ -1600,9 +1626,11 @@ canvas.addEventListener('touchstart', (e) => {
         isPanning = false;
     } else if (e.touches.length === 2) {
         isDragging = false; isPanning = true; isRolling = false;
-        lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        lastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        lastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const p1 = getRelativeTouchPos(e.touches[0], canvas);
+        const p2 = getRelativeTouchPos(e.touches[1], canvas);
+        lastDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        lastX = (p1.x + p2.x) / 2;
+        lastY = (p1.y + p2.y) / 2;
     }
 }, {passive:false});
 
@@ -1610,31 +1638,35 @@ canvas.addEventListener('touchmove', (e) => {
     if(isExporting) return;
     e.preventDefault();
     if (e.touches.length === 1) {
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const x = e.touches[0].clientX;
-        const y = e.touches[0].clientY;
+        const p = getRelativeTouchPos(e.touches[0], canvas);
+        
         if (isRolling) {
-            const angle = Math.atan2(y - cy, x - cx);
+            const angle = Math.atan2(p.y - p.cy, p.x - p.cx);
             const delta = angle - lastAngle;
             applyRoll(delta);
             lastAngle = angle;
-            lastX = x; lastY = y;
+            lastX = p.x; lastY = p.y;
         } else if (isDragging) {
-            const dx = x - lastX;
-            const dy = y - lastY;
+            const dx = p.x - lastX;
+            const dy = p.y - lastY;
             applyTrackballRotation(dx, dy);
-            lastX = x; lastY = y;
+            lastX = p.x; lastY = p.y;
         }
     } else if (e.touches.length === 2 && isPanning) {
-        const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const p1 = getRelativeTouchPos(e.touches[0], canvas);
+        const p2 = getRelativeTouchPos(e.touches[1], canvas);
+        
+        const newDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        const cx = (p1.x + p2.x) / 2;
+        const cy = (p1.y + p2.y) / 2;
+        
         const zoomDelta = newDist / lastDist;
         camZoom *= zoomDelta;
-        const pdx = (cx - lastX) / canvas.height * 2;
-        const pdy = (cy - lastY) / canvas.height * 2;
+        
+        const pdx = (cx - lastX) / p1.height * 2;
+        const pdy = (cy - lastY) / p1.height * 2;
         camPanX += pdx; camPanY -= pdy; 
+        
         lastDist = newDist; lastX = cx; lastY = cy;
     }
 }, {passive:false});
@@ -1649,19 +1681,25 @@ canvas.addEventListener('touchend', (e) => {
 canvas.onmousedown = (e) => {
     isInteracting = true;
     if(isExporting) return;
-    lastX = e.clientX; lastY = e.clientY;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    
+    lastX = mx; lastY = my;
+    
     if (e.button === 2) {
         isPanning = true; isDragging = false; isRolling = false;
     } else {
         isPanning = false;
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const dist = Math.hypot(lastX - cx, lastY - cy);
-        const maxDist = Math.min(canvas.width, canvas.height) / 2;
+        const dist = Math.hypot(mx - cx, my - cy);
+        const maxDist = Math.min(rect.width, rect.height) / 2;
+        
         if (dist > maxDist * 0.8) {
             isRolling = true;
             isDragging = false;
-            lastAngle = Math.atan2(lastY - cy, lastX - cx);
+            lastAngle = Math.atan2(my - cy, mx - cx);
         } else {
             isRolling = false;
             isDragging = true;
@@ -1676,25 +1714,28 @@ window.onmouseup = () => {
 
 window.onmousemove = (e) => {
     if (isExporting) return;
-    const x = e.clientX; const y = e.clientY;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    
     if (isRolling) {
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const angle = Math.atan2(y - cy, x - cx);
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+        const angle = Math.atan2(my - cy, mx - cx);
         const delta = angle - lastAngle;
         applyRoll(delta);
         lastAngle = angle;
     } else if (isDragging) {
-        const dx = x - lastX;
-        const dy = y - lastY;
+        const dx = mx - lastX;
+        const dy = my - lastY;
         applyTrackballRotation(dx, dy);
     } else if (isPanning) {
-        const dx = x - lastX;
-        const dy = y - lastY;
-        camPanX += (dx / canvas.height) * 2;
-        camPanY -= (dy / canvas.height) * 2;
+        const dx = mx - lastX;
+        const dy = my - lastY;
+        camPanX += (dx / rect.height) * 2;
+        camPanY -= (dy / rect.height) * 2;
     }
-    lastX = x; lastY = y;
+    lastX = mx; lastY = my;
 };
 
 canvas.onwheel = (e) => {
