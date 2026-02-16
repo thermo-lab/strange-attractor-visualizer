@@ -7,6 +7,7 @@
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa, Rikitake, Chua, Hindmarsh-Rose, Moore-Spiegel
+   - Power User Mode: Dynamic Search Bounds & Delta-Time control
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3 (Badge Hidden)
 */
 
@@ -22,10 +23,55 @@ const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL";
 // --- DETECT MOBILE ---
 const isMobile = window.matchMedia("(max-width: 768px)").matches;
 
+// --- GENERATOR DEFINITIONS (METADATA) ---
+const GEN_DEFS = {
+    poly: { 
+        label: "Polynomial", dt: 0.05, 
+        params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2 }] 
+    },
+    rikitake: { 
+        label: "Rikitake", dt: 0.015,
+        params: [
+            { name: "μ (Mu)", idx: 0, min: 0, max: 10, valMin: 1.0, valMax: 6.0 },
+            { name: "a (Alpha)", idx: 1, min: 0, max: 20, valMin: 2.0, valMax: 8.0 }
+        ]
+    },
+    chua: {
+        label: "Chua", dt: 0.015,
+        params: [
+            { name: "α (Alpha)", idx: 0, min: 0, max: 50, valMin: 9.0, valMax: 18.0 },
+            { name: "β (Beta)", idx: 1, min: 0, max: 50, valMin: 20.0, valMax: 35.0 },
+            { name: "m0", idx: 2, min: -2, max: 0, valMin: -1.3, valMax: -0.9 },
+            { name: "m1", idx: 3, min: -2, max: 0, valMin: -0.9, valMax: -0.5 }
+        ]
+    },
+    hindmarsh: {
+        label: "Hindmarsh-Rose", dt: 0.01,
+        params: [
+            { name: "r (Burst Rate)", idx: 4, min: 0.001, max: 0.05, valMin: 0.001, valMax: 0.01 },
+            { name: "I (Current)", idx: 7, min: 0, max: 10, valMin: 2.9, valMax: 3.4 }
+        ]
+    },
+    moore: {
+        label: "Moore-Spiegel", dt: 0.0002, // Very fast integration needed
+        params: [
+            { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0 },
+            { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0 }
+        ]
+    },
+    // Defaults for others
+    sym: { label: "Symmetric", dt: 0.015, params: [] },
+    grn: { label: "GRN", dt: 0.015, params: [] },
+    dadras: { label: "Dadras", dt: 0.015, params: [] },
+    thomas: { label: "Thomas", dt: 0.05, params: [] },
+    aizawa: { label: "Aizawa", dt: 0.01, params: [] }
+};
+
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
 let gpuRenderedDensity = 1.0;
 let gaussianTex = null;
+let currentConstraints = null;
 
 // Defaults (Will be tuned below if mobile)
 let camZoom = 2.0; 
@@ -100,7 +146,7 @@ const workerCode = `
     }
 
     self.onmessage = function(e) {
-        if (e.data.type === 'mine') mine(e.data.genType);
+        if (e.data.type === 'mine') mine(e.data.genType, e.data.constraints);
         else if (e.data.type === 'mutate') mutate(e.data.coeffs, e.data.genType);
         else if (e.data.type === 'render') renderExisting(e.data);
     };
@@ -116,12 +162,11 @@ const workerCode = `
     }
 
     function safePostMessage(msg, transfers) {
-        // Defensive check to prevent "Failed to convert value to object"
         if (transfers) {
             for (let i = 0; i < transfers.length; i++) {
                 if (!transfers[i]) {
                     console.error("Worker: Attempted to transfer null/undefined buffer.");
-                    return; // Abort send
+                    return; 
                 }
             }
         }
@@ -130,7 +175,10 @@ const workerCode = `
 
     function renderExisting(data) {
         const c = new Float32Array(data.coeffs);
-        const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType); 
+        // data.constraints might pass dtOverride if saved
+        const dtOverride = (data.constraints && data.constraints.dt) ? data.constraints.dt : null;
+        
+        const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType, dtOverride); 
         safePostMessage({
             type: 'found', 
             source: 'render', 
@@ -146,7 +194,7 @@ const workerCode = `
         return (Math.floor(Math.random() * 25) - 12) / 10.0;
     }
 
-    function mine(genType) {
+    function mine(genType, constraints) {
         let attempts = 0;
         let lastReport = Date.now();
         
@@ -154,88 +202,103 @@ const workerCode = `
             attempts++;
             let coeffs;
             
-            if (genType === 'sym') {
-                coeffs = new Float32Array(10); 
-                for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
+            // --- DYNAMIC PARAMETER GENERATION (POWER MODE) ---
+            if (constraints && constraints.params && constraints.params.length > 0) {
+                let size = 30; // Poly default
+                if (genType === 'rikitake' || genType === 'moore') size = 2;
+                if (genType === 'chua') size = 4;
+                if (genType === 'hindmarsh') size = 8;
+                if (genType === 'dadras') size = 5;
+                
+                coeffs = new Float32Array(size);
+
+                // Pre-fill defaults for complex constants (e.g. Hindmarsh)
+                if (genType === 'hindmarsh') {
+                    coeffs[0]=1; coeffs[1]=3; coeffs[2]=1; coeffs[3]=5; coeffs[5]=4; coeffs[6]=-1.6;
+                }
+
+                for(let p of constraints.params) {
+                    if (p.idx === -1) { 
+                        // Poly global symmetric range
+                        for(let i=0; i<30; i++) coeffs[i] = (Math.random() * (p.valMax*2)) - p.valMax;
+                    } else {
+                        // Specific Parameter
+                        coeffs[p.idx] = p.valMin + Math.random() * (p.valMax - p.valMin);
+                    }
+                }
             } 
-            else if (genType === 'grn') {
-                coeffs = new Float32Array(18);
-                for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
-                coeffs[9]  = (coeffs[0] + coeffs[1] + coeffs[2]) * 0.5 + (Math.random() - 0.5);
-                coeffs[10] = (coeffs[3] + coeffs[4] + coeffs[5]) * 0.5 + (Math.random() - 0.5);
-                coeffs[11] = (coeffs[6] + coeffs[7] + coeffs[8]) * 0.5 + (Math.random() - 0.5);
-                for(let i=12; i<15; i++) coeffs[i] = 2.5 + Math.random() * 4.5; 
-                let d1 = 0.2 + Math.random() * 0.2; 
-                let d2 = 0.6 + Math.random() * 0.3; 
-                let d3 = 1.0 + Math.random() * 0.5; 
-                let r = Math.random();
-                if(r < 0.33) { coeffs[15]=d1; coeffs[16]=d2; coeffs[17]=d3; }
-                else if(r < 0.66) { coeffs[15]=d3; coeffs[16]=d1; coeffs[17]=d2; }
-                else { coeffs[15]=d2; coeffs[16]=d3; coeffs[17]=d1; }
-            }
-            else if (genType === 'dadras') {
-                coeffs = new Float32Array(5);
-                coeffs[0] = 2.5 + Math.random();       
-                coeffs[1] = 2.0 + Math.random() * 1.5; 
-                coeffs[2] = 1.5 + Math.random();       
-                coeffs[3] = 1.5 + Math.random();       
-                coeffs[4] = 8.0 + Math.random() * 2;   
-            }
-            else if (genType === 'thomas') {
-                coeffs = new Float32Array(1);
-                coeffs[0] = 0.18 + Math.random() * 0.04; 
-            }
-            else if (genType === 'aizawa') {
-                coeffs = new Float32Array(6);
-                coeffs[0] = 0.95 + (Math.random()-0.5)*0.1;
-                coeffs[1] = 0.7  + (Math.random()-0.5)*0.1;
-                coeffs[2] = 0.6  + (Math.random()-0.5)*0.1;
-                coeffs[3] = 3.5  + (Math.random()-0.5)*0.5;
-                coeffs[4] = 0.25 + (Math.random()-0.5)*0.1;
-                coeffs[5] = 0.1  + (Math.random()-0.5)*0.05;
-            }
-            else if (genType === 'rikitake') {
-                coeffs = new Float32Array(2);
-                coeffs[0] = 1.0 + (Math.random() * 6.0); // mu
-                coeffs[1] = 2.0 + (Math.random() * 8.0); // a
-            }
-            else if (genType === 'chua') {
-                coeffs = new Float32Array(4);
-                coeffs[0] = 8.0 + Math.random() * 12.0;  // alpha
-                coeffs[1] = 20.0 + Math.random() * 20.0; // beta
-                coeffs[2] = -1.143 + (Math.random() - 0.5) * 0.5; 
-                coeffs[3] = -0.714 + (Math.random() - 0.5) * 0.5; 
-            }
-            else if (genType === 'hindmarsh') {
-                coeffs = new Float32Array(8);
-                coeffs[0] = 1.0; 
-                coeffs[1] = 3.0; 
-                coeffs[2] = 1.0; 
-                coeffs[3] = 5.0; 
-                coeffs[4] = 0.001 + (Math.random() * 0.01); // r
-                coeffs[5] = 4.0;
-                coeffs[6] = -1.6;
-                coeffs[7] = 2.0 + Math.random() * 2.0; // I
-            }
-            else if (genType === 'moore') {
-                coeffs = new Float32Array(2);
-                coeffs[0] = 5.0 + (Math.random() * 45.0); // Gamma: 5 to 50
-                coeffs[1] = 50.0 + (Math.random() * 100.0); // R: 50 to 150
-            }
             else {
-                // Poly
-                coeffs = new Float32Array(30);
-                for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
+                // --- STANDARD DEFAULTS ---
+                if (genType === 'sym') {
+                    coeffs = new Float32Array(10); for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
+                } 
+                else if (genType === 'grn') {
+                    coeffs = new Float32Array(18);
+                    for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
+                    coeffs[9] = (coeffs[0]+coeffs[1]+coeffs[2])*0.5 + (Math.random()-0.5);
+                    coeffs[10] = (coeffs[3]+coeffs[4]+coeffs[5])*0.5 + (Math.random()-0.5);
+                    coeffs[11] = (coeffs[6]+coeffs[7]+coeffs[8])*0.5 + (Math.random()-0.5);
+                    for(let i=12; i<15; i++) coeffs[i] = 2.5 + Math.random() * 4.5; 
+                    let d1 = 0.2+Math.random()*0.2; let d2 = 0.6+Math.random()*0.3; let d3 = 1.0+Math.random()*0.5; 
+                    let r = Math.random();
+                    if(r<0.33) { coeffs[15]=d1; coeffs[16]=d2; coeffs[17]=d3; }
+                    else if(r<0.66) { coeffs[15]=d3; coeffs[16]=d1; coeffs[17]=d2; }
+                    else { coeffs[15]=d2; coeffs[16]=d3; coeffs[17]=d1; }
+                }
+                else if (genType === 'dadras') {
+                    coeffs = new Float32Array(5);
+                    coeffs[0] = 2.5 + Math.random(); coeffs[1] = 2.0 + Math.random() * 1.5; 
+                    coeffs[2] = 1.5 + Math.random(); coeffs[3] = 1.5 + Math.random(); coeffs[4] = 8.0 + Math.random() * 2;   
+                }
+                else if (genType === 'thomas') {
+                    coeffs = new Float32Array(1); coeffs[0] = 0.18 + Math.random() * 0.04; 
+                }
+                else if (genType === 'aizawa') {
+                    coeffs = new Float32Array(6);
+                    coeffs[0]=0.95+(Math.random()-0.5)*0.1; coeffs[1]=0.7+(Math.random()-0.5)*0.1;
+                    coeffs[2]=0.6+(Math.random()-0.5)*0.1; coeffs[3]=3.5+(Math.random()-0.5)*0.5;
+                    coeffs[4]=0.25+(Math.random()-0.5)*0.1; coeffs[5]=0.1+(Math.random()-0.5)*0.05;
+                }
+                else if (genType === 'rikitake') {
+                    coeffs = new Float32Array(2);
+                    coeffs[0] = 1.0 + (Math.random() * 6.0); 
+                    coeffs[1] = 2.0 + (Math.random() * 8.0); 
+                }
+                else if (genType === 'chua') {
+                    coeffs = new Float32Array(4);
+                    coeffs[0] = 8.0 + Math.random() * 12.0;  
+                    coeffs[1] = 20.0 + Math.random() * 20.0; 
+                    coeffs[2] = -1.143 + (Math.random() - 0.5) * 0.5; 
+                    coeffs[3] = -0.714 + (Math.random() - 0.5) * 0.5; 
+                }
+                else if (genType === 'hindmarsh') {
+                    coeffs = new Float32Array(8);
+                    coeffs[0]=1.0; coeffs[1]=3.0; coeffs[2]=1.0; coeffs[3]=5.0; 
+                    coeffs[4] = 0.001 + (Math.random() * 0.01); 
+                    coeffs[5]=4.0; coeffs[6]=-1.6;
+                    coeffs[7] = 2.0 + Math.random() * 2.0; 
+                }
+                else if (genType === 'moore') {
+                    coeffs = new Float32Array(2);
+                    coeffs[0] = 5.0 + (Math.random() * 45.0); 
+                    coeffs[1] = 50.0 + (Math.random() * 100.0); 
+                }
+                else {
+                    coeffs = new Float32Array(30);
+                    for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
+                }
             }
             
-            if (checkChaosTail(coeffs, genType)) {
-                // Use fewer steps for mining check to save CPU
-                const result = generateTrace(50000, 1, 0, coeffs, genType);
+            let dtOverride = (constraints && constraints.dt) ? constraints.dt : null;
+
+            if (checkChaosTail(coeffs, genType, dtOverride)) {
+                const result = generateTrace(50000, 1, 0, coeffs, genType, dtOverride);
                 safePostMessage({
                     type: 'found', 
                     source: 'mine', 
                     coeffs: coeffs, 
                     genType: genType,
+                    constraints: constraints, // Pass back so we can save/reload state
                     density: 1, 
                     buffer: result.buffer, 
                     metaBuffer: result.metaBuffer, 
@@ -297,8 +360,10 @@ const workerCode = `
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
 
-            if (checkChaosTail(child, genType)) {
-                const result = generateTrace(50000, 1, 0, child, genType);
+            // Mutation inherits base parameters, so we pass null dtOverride 
+            // (it will assume default dt unless we architect complex inheritance)
+            if (checkChaosTail(child, genType, null)) {
+                const result = generateTrace(50000, 1, 0, child, genType, null);
                 safePostMessage({
                     type: 'found', 
                     source: 'mutate', 
@@ -315,7 +380,7 @@ const workerCode = `
         }
     }
 
-    function checkChaosTail(c, genType) {
+    function checkChaosTail(c, genType, dtOverride) {
         let x, y, z;
         if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
         else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
@@ -337,12 +402,13 @@ const workerCode = `
         let dt = 0.015;
         if (genType === 'poly') dt = 0.05;
         if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; // Super small steps for Moore
+        if (genType === 'moore') dt = 0.0002; 
         if (genType === 'hindmarsh') dt = 0.02;
+
+        if (dtOverride) dt = dtOverride;
 
         let p = c; 
         
-        // Cache poly for perf
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -418,7 +484,7 @@ const workerCode = `
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
         let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000; // Needs more time to stabilize
+        if(genType === 'moore') settleSteps = 5000;
 
         for(let i=0; i<settleSteps; i++) {
             calcD(x, y, z, k1);
@@ -487,7 +553,7 @@ const workerCode = `
         if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
         if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.002; minWidth=2.0; minVol=50; } // Relaxed constraints
+        if (genType === 'moore') { minL=0.002; minWidth=2.0; minVol=50; }
 
         if (lyapunov < minL) return false;
         
@@ -499,7 +565,7 @@ const workerCode = `
         return true;
     }
 
-    function generateTrace(nSteps, density, seedOffset, c, genType) {
+    function generateTrace(nSteps, density, seedOffset, c, genType, dtOverride) {
         const totalPoints = nSteps * density; 
         
         let posData = new Float32Array(totalPoints * 3);
@@ -525,8 +591,10 @@ const workerCode = `
         let dt = 0.015;
         if (genType === 'poly') dt = 0.05;
         if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; // Small step for high energy system
+        if (genType === 'moore') dt = 0.0002; 
         if (genType === 'hindmarsh') dt = 0.02;
+
+        if (dtOverride) dt = dtOverride;
 
         // Cache Coeffs
         let p = c; 
@@ -679,9 +747,10 @@ const workerCode = `
         if (genType === 'dadras') scaleTarget = 0.35; // Large range
         if (genType === 'thomas') scaleTarget = 0.5;
         if (genType === 'aizawa') scaleTarget = 0.6;
-        if (genType === 'chua') scaleTarget = 0.2; 
+        if (genType === 'chua') scaleTarget = 0.2; // Chua is tiny
         if (genType === 'hindmarsh') scaleTarget = 0.25; 
         if (genType === 'moore') scaleTarget = 0.8; 
+        if (genType === 'rikitake') scaleTarget = 2.0;
 
         if (rms > 0) {
             let s = scaleTarget / rms;
@@ -1363,6 +1432,75 @@ div.id = 'colorControls';
 // On mobile, maybe start hidden so they see the art first?
 if (isMobile) div.style.display = 'none'; 
 
+// --- POWER MODE MODAL ---
+const powerModal = document.createElement('div');
+powerModal.id = 'power-modal';
+powerModal.style.cssText = `
+    display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 90%; max-width: 400px; background: rgba(10,10,10,0.95); border: 1px solid #0f0;
+    padding: 20px; z-index: 10000; box-shadow: 0 0 20px rgba(0,255,0,0.2);
+    font-family: monospace; color: #fff; max-height: 80vh; overflow-y: auto; backdrop-filter: blur(5px);
+`;
+document.body.appendChild(powerModal);
+
+const overlay = document.createElement('div');
+overlay.id = 'power-overlay';
+overlay.style.cssText = `
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); z-index: 9999; backdrop-filter: blur(2px);
+`;
+overlay.onclick = () => { powerModal.style.display = 'none'; overlay.style.display = 'none'; };
+document.body.appendChild(overlay);
+
+function updatePowerUI() {
+    const type = selectGenType.value;
+    const defs = GEN_DEFS[type];
+    
+    let html = `<h3 style="margin-top:0; color:#0f0">⚡ Power Mode: ${defs.label}</h3>`;
+    html += `<div style="margin-bottom:15px; font-size:12px; color:#aaa;">Define search ranges for the miner.</div>`;
+    
+    // DT Input
+    html += `<div style="margin-bottom:10px;">
+        <label>Time Step (dt)</label>
+        <input type="number" id="pm-dt" value="${defs.dt}" step="0.0001" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+    </div>`;
+
+    if (defs.params.length === 0) {
+        html += `<div style="color:#666; padding:10px; border:1px dashed #444;">No configurable parameters for this generator yet.</div>`;
+    } else {
+        defs.params.forEach((p, i) => {
+            html += `<div style="border-top:1px solid #333; padding: 10px 0;">
+                <div style="color:#fff; font-weight:bold; margin-bottom:5px;">${p.name}</div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="number" id="pm-min-${i}" value="${p.valMin}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+                    <span style="color:#888;">to</span>
+                    <input type="number" id="pm-max-${i}" value="${p.valMax}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+                </div>
+            </div>`;
+        });
+    }
+
+    html += `<button id="pm-apply" style="width:100%; padding:12px; background:#0f0; color:#000; font-weight:bold; border:none; margin-top:15px; cursor:pointer;">APPLY & MINE ⛏️</button>`;
+    
+    powerModal.innerHTML = html;
+
+    document.getElementById('pm-apply').onclick = () => {
+        const newDt = parseFloat(document.getElementById('pm-dt').value);
+        const newParams = defs.params.map((p, i) => ({
+            idx: p.idx,
+            valMin: parseFloat(document.getElementById(`pm-min-${i}`).value),
+            valMax: parseFloat(document.getElementById(`pm-max-${i}`).value)
+        }));
+
+        currentConstraints = { dt: newDt, params: newParams };
+        powerModal.style.display = 'none';
+        overlay.style.display = 'none';
+        
+        uiStatus.innerText = "Mining with Constraints...";
+        worker.postMessage({ type: 'mine', genType: type, constraints: currentConstraints });
+    };
+}
+
 function createSection(title, contentHTML) {
     const section = document.createElement('div');
     const header = document.createElement('div');
@@ -1398,10 +1536,12 @@ div.appendChild(createSection("GENERATION", `
         <option value="hindmarsh">Hindmarsh-Rose (Neuron)</option>
         <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
-    <div style="display:flex; gap:5px; margin-bottom:10px;">
+    <div style="display:flex; gap:5px; margin-bottom:5px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ MINE</button>
         <button id="ui-btn-mutate" style="flex:1; cursor:pointer; background:#440044; color:#fff; border:1px solid #f0f; padding:10px;">🧬 MUTATE</button>
     </div>
+    <button id="ui-btn-power" style="width:100%; background:#222; color:#0f0; border:1px dashed #0f0; padding:5px; margin-bottom:10px; cursor:pointer;">⚡ POWER MODE</button>
+
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <button id="ui-btn-save" style="flex:1; background:#222; color:#fff; border:1px solid #555; padding:5px;">💾 SAVE</button>
         <button id="ui-btn-load" style="flex:1; background:#222; color:#fff; border:1px solid #555; padding:5px;">📂 LOAD</button>
@@ -1609,7 +1749,11 @@ selectExportUnit.onchange = (e) => {
 
 checkTransparent.onchange = (e) => { exportTransparent = e.target.checked; };
 
-selectGenType.onchange = (e) => { currentGenType = e.target.value; };
+selectGenType.onchange = (e) => { 
+    currentGenType = e.target.value;
+    currentConstraints = null; // Reset constraints on type switch
+};
+
 inputBg1.oninput = (e) => { bgA = hexToRgb(e.target.value); };
 inputBg2.oninput = (e) => { bgB = hexToRgb(e.target.value); };
 btnRerollBg.onclick = () => {
@@ -1663,7 +1807,20 @@ sliderGamma.oninput = (e) => { currentGamma = parseInt(e.target.value) / 10.0; }
 sliderSmooth.oninput = (e) => { currentNoise = parseInt(e.target.value) / 200.0; };
 btnSnap.onclick = () => { startTiledExport('download'); };
 btnOrder.onclick = () => { startTiledExport('pod'); };
-btnMine.onclick = () => { uiStatus.innerText = "Scanning..."; uiStatus.style.color = "#ffff00"; worker.postMessage({type: 'mine', genType: currentGenType}); };
+
+// Bind Power Mode
+document.getElementById('ui-btn-power').onclick = () => {
+    updatePowerUI();
+    powerModal.style.display = 'block';
+    overlay.style.display = 'block';
+};
+
+btnMine.onclick = () => { 
+    uiStatus.innerText = "Scanning..."; 
+    uiStatus.style.color = "#ffff00"; 
+    worker.postMessage({type: 'mine', genType: currentGenType, constraints: currentConstraints}); 
+};
+
 btnMutate.onclick = () => {
     if (!currentCoeffs) { uiStatus.innerText = "Mine first!"; return; }
     uiStatus.innerText = "Mutating..."; uiStatus.style.color = "#ff00ff";
@@ -1927,7 +2084,9 @@ worker.onmessage = (e) => {
                 coeffs: currentCoeffs, 
                 physicsSteps: currentPhysicsSteps, 
                 density: currentDensity, 
-                genType: currentGenType 
+                genType: currentGenType,
+                // Pass constraints back if they exist, so the UI state remains consistent if we save
+                constraints: e.data.constraints 
             });
         }
     }
@@ -2226,7 +2385,9 @@ async function startTiledExport(mode = 'download') {
                         physicsSteps: exportPhysics, 
                         density: currentDensity, 
                         seedOffset: p,
-                        genType: currentGenType
+                        genType: currentGenType,
+                        // Fix for tiled export using Power Mode Settings
+                        constraints: meta.constraints 
                     });
                 });
                 renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, compensatedPanX);
@@ -2259,14 +2420,6 @@ async function startTiledExport(mode = 'download') {
             if (blendMode === 'ADD') bMode = 1;
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
 
-            const checkGuide = document.getElementById('ui-show-guide');
-            const valW = parseFloat(document.getElementById('ui-print-w').value) || 1;
-            const valH = parseFloat(document.getElementById('ui-print-h').value) || 1;
-            const printAspect = valW / valH;
-            
-            gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_show_guide"), checkGuide.checked ? 1 : 0);
-            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_print_aspect"), printAspect);
-            
             gl.drawArrays(gl.TRIANGLES, 0, 3);
             
             const pixels = new Uint8Array(tileW * tileH * 4);
