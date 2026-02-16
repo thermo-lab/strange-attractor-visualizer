@@ -3,7 +3,7 @@
    - ODE Flow Mining (Chaos Hunter)
    - RK4 Integration (High Accuracy)
    - Mobile-Responsive UI (Sidebar vs Bottom Drawer)
-   - Smart Performance Tuning (Auto-downgrade for mobile)
+   - High-DPI / Retina Display Support
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa
@@ -277,161 +277,6 @@ const workerCode = `
         let dt = (genType === 'poly') ? 0.05 : 0.015;
         if (genType === 'aizawa') dt = 0.01;
 
-        let p = c; 
-        
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        }
-
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
-                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
-                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
-            } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
-            else if (genType === 'dadras') {
-                res.dx = py - p[0]*px + p[1]*py*pz;
-                res.dy = p[2]*py - px*pz + pz;
-                res.dz = p[3]*px*py - p[4]*pz;
-            }
-            else if (genType === 'thomas') {
-                res.dx = Math.sin(py) - p[0]*px;
-                res.dy = Math.sin(pz) - p[0]*py;
-                res.dz = Math.sin(px) - p[0]*pz;
-            }
-            else if (genType === 'aizawa') {
-                let x2 = px*px; let y2 = py*py;
-                res.dx = (pz - p[1])*px - p[3]*py;
-                res.dy = p[3]*px + (pz - p[1])*py;
-                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
-            }
-            else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
-        }
-        
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        
-        for(let i=0; i<settleSteps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
-            
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-
-        if (lyapunov < minL) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
-
-        return true;
-    }
-
-    function generateTrace(nSteps, density, seedOffset, c, genType) {
-        const totalPoints = nSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
-            x = (rand() - 0.5) * 3.0; 
-            y = (rand() - 0.5) * 3.0; 
-            z = (rand() - 0.5) * 3.0;
-        }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = (genType === 'poly') ? 0.05 : 0.015; 
-        if(genType === 'aizawa') dt = 0.01;
-
-        // Cache Coeffs
         let p = c; 
         
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
@@ -967,6 +812,7 @@ function resizeViewportFBO() {
     viewFbo = gl.createFramebuffer();
     viewTex = gl.createTexture();
     
+    // Scale texture to device physical pixels * render scale
     const w = Math.floor(canvas.width * renderScale);
     const h = Math.floor(canvas.height * renderScale);
 
@@ -1165,11 +1011,11 @@ style.textContent = `
         display: none; /* Collapsed by default */
     }
 
-    /* Toggle Button (Gear) */
+    /* Toggle Button (Gear) - Fixed Bottom Left */
     #ui-toggle-btn {
         position: absolute;
-        top: 20px;
-        right: 270px; /* Sit to the left of the panel */
+        bottom: 20px;
+        left: 20px;
         background: #000;
         color: #0f0;
         border: 1px solid #0f0;
@@ -1182,6 +1028,7 @@ style.textContent = `
         align-items: center;
         justify-content: center;
         user-select: none;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
     }
 
     /* --- MOBILE OVERRIDES --- */
@@ -1197,15 +1044,11 @@ style.textContent = `
             border-top: 2px solid #0f0;
         }
 
-        /* Move toggle button to bottom right floating */
+        /* Float the button on mobile too */
         #ui-toggle-btn {
-            top: auto;
-            bottom: 20px;
-            right: 20px;
             width: 50px;
             height: 50px;
             border-radius: 50%;
-            box-shadow: 0 0 10px #000;
         }
 
         /* Fat Finger Targets */
@@ -2266,8 +2109,14 @@ function renderFrame() {
 
 function loop() {
     if (!isExporting) { 
-        if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
-            canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+        // --- HIGH DPI FIX ---
+        const dpr = window.devicePixelRatio || 1;
+        const displayWidth  = Math.floor(canvas.clientWidth * dpr);
+        const displayHeight = Math.floor(canvas.clientHeight * dpr);
+
+        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
             resizeViewportFBO(); 
         }
         renderFrame();
