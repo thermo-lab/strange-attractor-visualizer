@@ -2289,7 +2289,7 @@ async function startPrintCheckout(blob) {
   }
 }
 
-function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jitter, overridePanX) {
+function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jitter, overridePanX, overridePanY, overrideZoom) {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
     gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
@@ -2297,13 +2297,17 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
     const rotMatrix = qToMatrix(currentQuat);
     gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
     
+    // FIX: Allow overrides for PanX, PanY, and Zoom for accurate letterbox framing
     const usePanX = (overridePanX !== undefined) ? overridePanX : camPanX;
-    gl.uniform2f(gl.getUniformLocation(particleProgram, "u_pan"), usePanX, camPanY);
+    const usePanY = (overridePanY !== undefined) ? overridePanY : camPanY;
+    const useZoom = (overrideZoom !== undefined) ? overrideZoom : camZoom;
     
-    gl.uniform1f(gl.getUniformLocation(particleProgram, "u_zoom"), camZoom);
+    gl.uniform2f(gl.getUniformLocation(particleProgram, "u_pan"), usePanX, usePanY);
+    gl.uniform1f(gl.getUniformLocation(particleProgram, "u_zoom"), useZoom);
+    
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aspect"), forcedAspect);
     gl.uniform4f(gl.getUniformLocation(particleProgram, "u_tileBounds"), tileBounds[0], tileBounds[1], tileBounds[2], tileBounds[3]);
-
+    
     gl.uniform1i(gl.getUniformLocation(particleProgram, "u_colorMode"), colorMode);
     gl.uniform3f(gl.getUniformLocation(particleProgram, "u_colorSeed"), colorSeed[0], colorSeed[1], colorSeed[2]);
     gl.uniform1i(gl.getUniformLocation(particleProgram, "u_invert"), 0); 
@@ -2396,6 +2400,21 @@ async function startTiledExport(mode = 'download') {
     const screenAspect = canvas.width / canvas.height;
     const printAspect = totalW / totalH;
     
+    // FIX: Calculate precise framing adjustments for Letterbox vs Pillarbox
+    let exportZoom = camZoom;
+    let exportPanX = camPanX;
+    let exportPanY = camPanY;
+
+    if (printAspect > screenAspect) {
+        // Letterbox mode: Print is relatively wider. Because the shader locks height, 
+        // we must multiply the zoom and pan to physically scale the geometry up 
+        // so the top and bottom get chopped off exactly as previewed.
+        const framingRatio = printAspect / screenAspect;
+        exportZoom *= framingRatio;
+        exportPanX *= framingRatio;
+        exportPanY *= framingRatio;
+    }
+
     const meta = serializeState(); 
     const exportID = meta.id;
 
@@ -2447,11 +2466,12 @@ async function startTiledExport(mode = 'download') {
                         density: currentDensity, 
                         seedOffset: p,
                         genType: currentGenType,
-                        // Fix for tiled export using Power Mode Settings
                         constraints: meta.constraints 
                     });
                 });
-                renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, camPanX);
+                
+                // FIX: Pass the compensated Zoom and Pan variables
+                renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, exportPanX, exportPanY, exportZoom);
             }
             
             gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
