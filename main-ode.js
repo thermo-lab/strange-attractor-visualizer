@@ -857,16 +857,31 @@ void main() {
     float scaledBlur = rawBlur * scaleFactor;
     scaledBlur = clamp(scaledBlur, 0.0, 400.0 * scaleFactor);
 
-    float baseSize = max(u_pointSize, 1.0);
+    // FIX 1: Allow baseSize to be sub-pixel (remove the max 1.0 clamp here)
+    float baseSize = u_pointSize; 
     float targetSize = baseSize + scaledBlur;
     
     float rnd = hash(float(gl_VertexID) + 555.555);
     float sizeJitter = (rnd - 0.5) * (targetSize * 0.15); 
     
-    gl_PointSize = max(1.0, targetSize + sizeJitter); 
+    float finalSize = targetSize + sizeJitter;
     
-    float areaRatio = baseSize / targetSize;
-    v_attenuation = areaRatio; 
+    // WebGL forces this to 1.0 minimum physically
+    gl_PointSize = max(1.0, finalSize); 
+    
+    // FIX 2: Calculate Area Attenuation (Depth of Field)
+    // Protected against divide-by-zero
+    float areaRatio = baseSize / max(0.0001, targetSize); 
+
+    // FIX 3: Sub-Pixel Energy Conservation
+    // If the logical size is 0.5 but we draw 1.0, we have 4x too much area.
+    // We must dim opacity by 0.5*0.5 = 0.25 to maintain correct energy.
+    float subPixelComp = 1.0;
+    if (finalSize < 1.0) {
+        subPixelComp = finalSize * finalSize;
+    }
+    
+    v_attenuation = areaRatio * subPixelComp;
     
     float jx = (hash(float(gl_VertexID)) - 0.5) * u_jitter;
     float jy = (hash(float(gl_VertexID) + 123.45) - 0.5) * u_jitter;
