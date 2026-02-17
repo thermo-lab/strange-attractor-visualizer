@@ -27,44 +27,67 @@ const isMobile = window.matchMedia("(max-width: 768px)").matches;
 const GEN_DEFS = {
     poly: { 
         label: "Polynomial", dt: 0.05, 
-        params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2 }] 
+        params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }] 
     },
     rikitake: { 
         label: "Rikitake", dt: 0.015,
         params: [
-            { name: "μ (Mu)", idx: 0, min: 0, max: 10, valMin: 1.0, valMax: 6.0 },
-            { name: "a (Alpha)", idx: 1, min: 0, max: 20, valMin: 2.0, valMax: 8.0 }
+            { name: "μ (Mu)", idx: 0, min: 0, max: 10, valMin: 1.0, valMax: 6.0, defMin: 1.0, defMax: 6.0 },
+            { name: "a (Alpha)", idx: 1, min: 0, max: 20, valMin: 2.0, valMax: 8.0, defMin: 2.0, defMax: 8.0 }
         ]
     },
     chua: {
         label: "Chua", dt: 0.015,
         params: [
-            { name: "α (Alpha)", idx: 0, min: 0, max: 50, valMin: 9.0, valMax: 18.0 },
-            { name: "β (Beta)", idx: 1, min: 0, max: 50, valMin: 20.0, valMax: 35.0 },
-            { name: "m0", idx: 2, min: -2, max: 0, valMin: -1.3, valMax: -0.9 },
-            { name: "m1", idx: 3, min: -2, max: 0, valMin: -0.9, valMax: -0.5 }
+            { name: "α (Alpha)", idx: 0, min: 0, max: 50, valMin: 9.0, valMax: 18.0, defMin: 9.0, defMax: 18.0 },
+            { name: "β (Beta)", idx: 1, min: 0, max: 50, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
+            { name: "m0", idx: 2, min: -2, max: 0, valMin: -1.3, valMax: -0.9, defMin: -1.3, defMax: -0.9 },
+            { name: "m1", idx: 3, min: -2, max: 0, valMin: -0.9, valMax: -0.5, defMin: -0.9, defMax: -0.5 }
         ]
     },
     hindmarsh: {
         label: "Hindmarsh-Rose", dt: 0.01,
         params: [
-            { name: "r (Burst Rate)", idx: 4, min: 0.001, max: 0.05, valMin: 0.001, valMax: 0.01 },
-            { name: "I (Current)", idx: 7, min: 0, max: 10, valMin: 2.9, valMax: 3.4 }
+            { name: "r (Burst Rate)", idx: 4, min: 0.001, max: 0.05, valMin: 0.001, valMax: 0.01, defMin: 0.001, defMax: 0.01 },
+            { name: "I (Current)", idx: 7, min: 0, max: 10, valMin: 2.9, valMax: 3.4, defMin: 2.9, defMax: 3.4 }
         ]
     },
     moore: {
-        label: "Moore-Spiegel", dt: 0.0002, // Very fast integration needed
+        label: "Moore-Spiegel", dt: 0.0002,
         params: [
-            { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0 },
-            { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0 }
+            { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
+            { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0, defMin: 80.0, defMax: 120.0 }
         ]
     },
-    // Defaults for others
+    dadras: { 
+        label: "Dadras", dt: 0.015, 
+        params: [
+            { name: "p", idx: 0, min: 1, max: 5, valMin: 2.5, valMax: 3.5, defMin: 2.5, defMax: 3.5 },
+            { name: "σ (Sigma)", idx: 1, min: 1, max: 5, valMin: 2.0, valMax: 3.5, defMin: 2.0, defMax: 3.5 },
+            { name: "ρ (Rho)", idx: 2, min: 0, max: 5, valMin: 1.5, valMax: 2.5, defMin: 1.5, defMax: 2.5 },
+            { name: "β (Beta)", idx: 3, min: 0, max: 5, valMin: 1.5, valMax: 2.5, defMin: 1.5, defMax: 2.5 },
+            { name: "γ (Gamma)", idx: 4, min: 5, max: 15, valMin: 8.0, valMax: 10.0, defMin: 8.0, defMax: 10.0 }
+        ] 
+    },
+    thomas: { 
+        label: "Thomas", dt: 0.05, 
+        params: [
+            { name: "b (Dissipation)", idx: 0, min: 0, max: 0.4, valMin: 0.18, valMax: 0.22, defMin: 0.18, defMax: 0.22 }
+        ] 
+    },
+    aizawa: { 
+        label: "Aizawa", dt: 0.01, 
+        params: [
+            { name: "ε (Epsilon)", idx: 0, min: 0, max: 2, valMin: 0.90, valMax: 1.0, defMin: 0.90, defMax: 1.0 },
+            { name: "α (Alpha)", idx: 1, min: 0, max: 2, valMin: 0.65, valMax: 0.75, defMin: 0.65, defMax: 0.75 },
+            { name: "γ (Gamma)", idx: 2, min: 0, max: 2, valMin: 0.55, valMax: 0.65, defMin: 0.55, defMax: 0.65 },
+            { name: "δ (Delta)", idx: 3, min: 0, max: 5, valMin: 3.25, valMax: 3.75, defMin: 3.25, defMax: 3.75 },
+            { name: "β (Beta)", idx: 4, min: 0, max: 1, valMin: 0.20, valMax: 0.30, defMin: 0.20, defMax: 0.30 },
+            { name: "ζ (Zeta)", idx: 5, min: 0, max: 0.5, valMin: 0.075, valMax: 0.125, defMin: 0.075, defMax: 0.125 }
+        ] 
+    },
     sym: { label: "Symmetric", dt: 0.015, params: [] },
-    grn: { label: "GRN", dt: 0.015, params: [] },
-    dadras: { label: "Dadras", dt: 0.015, params: [] },
-    thomas: { label: "Thomas", dt: 0.05, params: [] },
-    aizawa: { label: "Aizawa", dt: 0.01, params: [] }
+    grn: { label: "GRN", dt: 0.015, params: [] }
 };
 
 // --- GLOBAL STATE VARIABLES ---
@@ -1456,10 +1479,12 @@ function updatePowerUI() {
     const type = selectGenType.value;
     const defs = GEN_DEFS[type];
     
-    let html = `<h3 style="margin-top:0; color:#0f0">⚡ Power Mode: ${defs.label}</h3>`;
+    let html = `<div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0; color:#0f0">⚡ Power Mode: ${defs.label}</h3>
+        <button id="pm-reset" style="background:#444; color:#fff; border:1px solid #777; padding:2px 8px; font-size:10px; cursor:pointer;">RESET DEFAULTS</button>
+    </div>`;
     html += `<div style="margin-bottom:15px; font-size:12px; color:#aaa;">Define search ranges for the miner.</div>`;
     
-    // DT Input
     html += `<div style="margin-bottom:10px;">
         <label>Time Step (dt)</label>
         <input type="number" id="pm-dt" value="${defs.dt}" step="0.0001" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
@@ -1472,9 +1497,9 @@ function updatePowerUI() {
             html += `<div style="border-top:1px solid #333; padding: 10px 0;">
                 <div style="color:#fff; font-weight:bold; margin-bottom:5px;">${p.name}</div>
                 <div style="display:flex; gap:10px; align-items:center;">
-                    <input type="number" id="pm-min-${i}" value="${p.valMin}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+                    <input type="number" id="pm-min-${i}" value="${p.valMin}" step="0.001" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
                     <span style="color:#888;">to</span>
-                    <input type="number" id="pm-max-${i}" value="${p.valMax}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+                    <input type="number" id="pm-max-${i}" value="${p.valMax}" step="0.001" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
                 </div>
             </div>`;
         });
@@ -1484,15 +1509,33 @@ function updatePowerUI() {
     
     powerModal.innerHTML = html;
 
+    // Reset Handler
+    document.getElementById('pm-reset').onclick = () => {
+        defs.dt = (type === 'moore') ? 0.0002 : (type === 'poly' || type === 'thomas' ? 0.05 : 0.015);
+        defs.params.forEach(p => {
+            p.valMin = p.defMin;
+            p.valMax = p.defMax;
+        });
+        updatePowerUI(); // Refresh UI
+    };
+
+    // Apply Handler
     document.getElementById('pm-apply').onclick = () => {
-        const newDt = parseFloat(document.getElementById('pm-dt').value);
-        const newParams = defs.params.map((p, i) => ({
+        // 1. Update Persistent State
+        defs.dt = parseFloat(document.getElementById('pm-dt').value);
+        defs.params.forEach((p, i) => {
+            p.valMin = parseFloat(document.getElementById(`pm-min-${i}`).value);
+            p.valMax = parseFloat(document.getElementById(`pm-max-${i}`).value);
+        });
+
+        // 2. Build Constraints object for Worker
+        const newParams = defs.params.map(p => ({
             idx: p.idx,
-            valMin: parseFloat(document.getElementById(`pm-min-${i}`).value),
-            valMax: parseFloat(document.getElementById(`pm-max-${i}`).value)
+            valMin: p.valMin,
+            valMax: p.valMax
         }));
 
-        currentConstraints = { dt: newDt, params: newParams };
+        currentConstraints = { dt: defs.dt, params: newParams };
         powerModal.style.display = 'none';
         overlay.style.display = 'none';
         
@@ -1510,6 +1553,9 @@ function createSection(title, contentHTML) {
     const content = document.createElement('div');
     content.className = 'ui-content';
     content.innerHTML = contentHTML;
+    
+    // FIX: Explicitly set display state so toggle works on first click
+    content.style.display = 'none'; 
 
     header.onclick = () => {
         const isClosed = content.style.display === 'none';
@@ -1706,6 +1752,9 @@ const inpW = document.getElementById('ui-print-w');
 const inpH = document.getElementById('ui-print-h');
 const inpDPI = document.getElementById('ui-print-dpi');
 const inpPasses = document.getElementById('ui-print-passes');
+
+selectBlend.value = blendMode; 
+selectColor.value = colorMode;
 
 // --- EVENT HANDLERS ---
 window.onerror = function(msg, url, line) {
