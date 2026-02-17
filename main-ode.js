@@ -7,7 +7,7 @@
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa, Rikitake, Chua, Hindmarsh-Rose, Moore-Spiegel
-   - Power User Mode: Persistent Settings, Expanded Params, Reset Capability
+   - Power User Mode: Dynamic Search Bounds & Delta-Time control
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3 (Badge Hidden)
 */
 
@@ -28,39 +28,6 @@ const GEN_DEFS = {
     poly: { 
         label: "Polynomial", dt: 0.05, 
         params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2 }] 
-    },
-    sym: {
-        label: "Symmetric", dt: 0.015,
-        params: [
-            { name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2 }
-        ]
-    },
-    thomas: {
-        label: "Thomas", dt: 0.05,
-        params: [
-            { name: "b (Dissipation)", idx: 0, min: 0, max: 0.5, valMin: 0.18, valMax: 0.22 }
-        ]
-    },
-    dadras: {
-        label: "Dadras", dt: 0.015,
-        params: [
-            { name: "p (Val A)", idx: 0, min: 1, max: 5, valMin: 2.0, valMax: 3.5 },
-            { name: "q (Val B)", idx: 1, min: 1, max: 5, valMin: 2.0, valMax: 3.5 },
-            { name: "r (Val C)", idx: 2, min: 0, max: 3, valMin: 1.0, valMax: 2.5 },
-            { name: "s (Val D)", idx: 3, min: 0, max: 3, valMin: 1.0, valMax: 2.5 },
-            { name: "e (Scale)", idx: 4, min: 1, max: 15, valMin: 6.0, valMax: 10.0 }
-        ]
-    },
-    aizawa: {
-        label: "Aizawa", dt: 0.01,
-        params: [
-            { name: "a (Linear X)", idx: 0, min: 0, max: 2, valMin: 0.9, valMax: 1.0 },
-            { name: "b (Linear Z)", idx: 1, min: 0, max: 2, valMin: 0.6, valMax: 0.8 },
-            { name: "c (Nonlinear)", idx: 2, min: 0, max: 2, valMin: 0.5, valMax: 0.7 },
-            { name: "d (Scale)", idx: 3, min: 0, max: 6, valMin: 3.0, valMax: 4.0 },
-            { name: "e (Coupling)", idx: 4, min: 0, max: 1, valMin: 0.2, valMax: 0.3 },
-            { name: "f (Cubic)", idx: 5, min: 0, max: 1, valMin: 0.05, valMax: 0.15 }
-        ]
     },
     rikitake: { 
         label: "Rikitake", dt: 0.015,
@@ -86,27 +53,24 @@ const GEN_DEFS = {
         ]
     },
     moore: {
-        label: "Moore-Spiegel", dt: 0.0002, 
+        label: "Moore-Spiegel", dt: 0.0002, // Very fast integration needed
         params: [
             { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0 },
             { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0 }
         ]
     },
-    grn: { 
-        label: "GRN", dt: 0.015, 
-        params: [
-            { name: "Decay Rates", idx: -1, min: 0, max: 10, valMin: 2.5, valMax: 7.0 } // Simplified for UI
-        ] 
-    }
+    // Defaults for others
+    sym: { label: "Symmetric", dt: 0.015, params: [] },
+    grn: { label: "GRN", dt: 0.015, params: [] },
+    dadras: { label: "Dadras", dt: 0.015, params: [] },
+    thomas: { label: "Thomas", dt: 0.05, params: [] },
+    aizawa: { label: "Aizawa", dt: 0.01, params: [] }
 };
 
 // --- GLOBAL STATE VARIABLES ---
 let pointCount = 0;
 let gpuRenderedDensity = 1.0;
 let gaussianTex = null;
-
-// POWER SETTINGS CACHE (Persistence)
-let powerSettingsCache = {};
 let currentConstraints = null;
 
 // Defaults (Will be tuned below if mobile)
@@ -211,6 +175,7 @@ const workerCode = `
 
     function renderExisting(data) {
         const c = new Float32Array(data.coeffs);
+        // data.constraints might pass dtOverride if saved
         const dtOverride = (data.constraints && data.constraints.dt) ? data.constraints.dt : null;
         
         const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType, dtOverride); 
@@ -237,55 +202,25 @@ const workerCode = `
             attempts++;
             let coeffs;
             
-            // --- DYNAMIC PARAMETER GENERATION ---
+            // --- DYNAMIC PARAMETER GENERATION (POWER MODE) ---
             if (constraints && constraints.params && constraints.params.length > 0) {
                 let size = 30; // Poly default
                 if (genType === 'rikitake' || genType === 'moore') size = 2;
                 if (genType === 'chua') size = 4;
                 if (genType === 'hindmarsh') size = 8;
                 if (genType === 'dadras') size = 5;
-                if (genType === 'thomas') size = 1;
-                if (genType === 'aizawa') size = 6;
-                if (genType === 'sym') size = 10;
-                if (genType === 'grn') size = 18;
                 
                 coeffs = new Float32Array(size);
 
-                // --- PRE-FILL DEFAULTS FOR PARTIAL OVERRIDES ---
+                // Pre-fill defaults for complex constants (e.g. Hindmarsh)
                 if (genType === 'hindmarsh') {
                     coeffs[0]=1; coeffs[1]=3; coeffs[2]=1; coeffs[3]=5; coeffs[5]=4; coeffs[6]=-1.6;
                 }
-                if (genType === 'sym') {
-                    for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
-                }
-                if (genType === 'grn') {
-                    // Fill standard random GRN first, then override
-                    for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
-                    coeffs[9] = (coeffs[0]+coeffs[1]+coeffs[2])*0.5 + (Math.random()-0.5);
-                    coeffs[10] = (coeffs[3]+coeffs[4]+coeffs[5])*0.5 + (Math.random()-0.5);
-                    coeffs[11] = (coeffs[6]+coeffs[7]+coeffs[8])*0.5 + (Math.random()-0.5);
-                    for(let i=12; i<15; i++) coeffs[i] = 2.5 + Math.random() * 4.5; 
-                    let d1 = 0.2+Math.random()*0.2; let d2 = 0.6+Math.random()*0.3; let d3 = 1.0+Math.random()*0.5; 
-                    let r = Math.random();
-                    if(r<0.33) { coeffs[15]=d1; coeffs[16]=d2; coeffs[17]=d3; }
-                    else if(r<0.66) { coeffs[15]=d3; coeffs[16]=d1; coeffs[17]=d2; }
-                    else { coeffs[15]=d2; coeffs[16]=d3; coeffs[17]=d1; }
-                }
 
-                // --- APPLY CONSTRAINTS ---
                 for(let p of constraints.params) {
                     if (p.idx === -1) { 
-                        // GLOBAL OVERRIDES
-                        if (genType === 'poly') {
-                            for(let i=0; i<30; i++) coeffs[i] = (Math.random() * (p.valMax*2)) - p.valMax;
-                        }
-                        else if (genType === 'sym') {
-                            for(let i=0; i<10; i++) coeffs[i] = Math.round(((Math.random() * (p.valMax*2)) - p.valMax)*10)/10;
-                        }
-                        else if (genType === 'grn') {
-                            // Override only the decay rates (12-14) if global slide used
-                            for(let i=12; i<15; i++) coeffs[i] = p.valMin + Math.random() * (p.valMax - p.valMin);
-                        }
+                        // Poly global symmetric range
+                        for(let i=0; i<30; i++) coeffs[i] = (Math.random() * (p.valMax*2)) - p.valMax;
                     } else {
                         // Specific Parameter
                         coeffs[p.idx] = p.valMin + Math.random() * (p.valMax - p.valMin);
@@ -293,7 +228,7 @@ const workerCode = `
                 }
             } 
             else {
-                // --- STANDARD DEFAULTS (NO POWER MODE) ---
+                // --- STANDARD DEFAULTS ---
                 if (genType === 'sym') {
                     coeffs = new Float32Array(10); for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
                 } 
@@ -363,7 +298,7 @@ const workerCode = `
                     source: 'mine', 
                     coeffs: coeffs, 
                     genType: genType,
-                    constraints: constraints, 
+                    constraints: constraints, // Pass back so we can save/reload state
                     density: 1, 
                     buffer: result.buffer, 
                     metaBuffer: result.metaBuffer, 
@@ -425,6 +360,8 @@ const workerCode = `
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
 
+            // Mutation inherits base parameters, so we pass null dtOverride 
+            // (it will assume default dt unless we architect complex inheritance)
             if (checkChaosTail(child, genType, null)) {
                 const result = generateTrace(50000, 1, 0, child, genType, null);
                 safePostMessage({
@@ -472,7 +409,6 @@ const workerCode = `
 
         let p = c; 
         
-        // Cache poly for perf
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
         let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
         let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
@@ -617,7 +553,7 @@ const workerCode = `
         if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
         if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
+        if (genType === 'moore') { minL=0.002; minWidth=2.0; minVol=50; }
 
         if (lyapunov < minL) return false;
         
@@ -737,1036 +673,91 @@ const workerCode = `
         
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000;
+        const history = [];
 
-        for(let i=0; i<settleSteps; i++) {
+        function stepPhysics() {
             calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
+            let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
+            let logVel = Math.log(speed + 1.0);
+            let curv = 0; 
             
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
-
-        if (lyapunov < minL) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
-
-        return true;
-    }
-
-    function generateTrace(nSteps, density, seedOffset, c, genType, dtOverride) {
-        const totalPoints = nSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
-            x = (rand() - 0.5) * 3.0; 
-            y = (rand() - 0.5) * 3.0; 
-            z = (rand() - 0.5) * 3.0;
-        }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
-        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = 0.015;
-        if (genType === 'poly') dt = 0.05;
-        if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; 
-        if (genType === 'hindmarsh') dt = 0.02;
-
-        if (dtOverride) dt = dtOverride;
-
-        // Cache Coeffs
-        let p = c; 
-        
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        }
-
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
-                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
-                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
-            } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
-            else if (genType === 'rikitake') {
-                res.dx = -p[0]*px + py*pz;
-                res.dy = -p[0]*py + px*(p[1] - pz);
-                res.dz = 1.0 - px*py;
-            }
-            else if (genType === 'chua') {
-                let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
-                res.dx = p[0]*(py - px - h);
-                res.dy = px - py + pz;
-                res.dz = -p[1]*py;
-            }
-            else if (genType === 'hindmarsh') {
-                let x2 = px*px;
-                let x3 = x2*px;
-                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
-                res.dy = p[2] - p[3]*x2 - py;
-                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
-            }
-            else if (genType === 'moore') {
-                res.dx = py;
-                res.dy = pz;
-                res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
-            }
-            else if (genType === 'dadras') {
-                res.dx = py - p[0]*px + p[1]*py*pz;
-                res.dy = p[2]*py - px*pz + pz;
-                res.dz = p[3]*px*py - p[4]*pz;
-            }
-            else if (genType === 'thomas') {
-                res.dx = Math.sin(py) - p[0]*px;
-                res.dy = Math.sin(pz) - p[0]*py;
-                res.dz = Math.sin(px) - p[0]*pz;
-            }
-            else if (genType === 'aizawa') {
-                let x2 = px*px; let y2 = py*py;
-                res.dx = (pz - p[1])*px - p[3]*py;
-                res.dy = p[3]*px + (pz - p[1])*py;
-                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
-            }
-            else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
-        }
-        
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000;
-
-        for(let i=0; i<settleSteps; i++) {
-            calcD(x, y, z, k1);
             calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
             calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
             calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
             
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
-
-        if (lyapunov < minL) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
-
-        return true;
-    }
-
-    function generateTrace(nSteps, density, seedOffset, c, genType, dtOverride) {
-        const totalPoints = nSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
-            x = (rand() - 0.5) * 3.0; 
-            y = (rand() - 0.5) * 3.0; 
-            z = (rand() - 0.5) * 3.0;
-        }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
-        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = 0.015;
-        if (genType === 'poly') dt = 0.05;
-        if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; 
-        if (genType === 'hindmarsh') dt = 0.02;
-
-        if (dtOverride) dt = dtOverride;
-
-        // Cache Coeffs
-        let p = c; 
-        
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        }
-
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
-                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
-                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
-            } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
-            else if (genType === 'rikitake') {
-                res.dx = -p[0]*px + py*pz;
-                res.dy = -p[0]*py + px*(p[1] - pz);
-                res.dz = 1.0 - px*py;
-            }
-            else if (genType === 'chua') {
-                let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
-                res.dx = p[0]*(py - px - h);
-                res.dy = px - py + pz;
-                res.dz = -p[1]*py;
-            }
-            else if (genType === 'hindmarsh') {
-                let x2 = px*px;
-                let x3 = x2*px;
-                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
-                res.dy = p[2] - p[3]*x2 - py;
-                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
-            }
-            else if (genType === 'moore') {
-                res.dx = py;
-                res.dy = pz;
-                res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
-            }
-            else if (genType === 'dadras') {
-                res.dx = py - p[0]*px + p[1]*py*pz;
-                res.dy = p[2]*py - px*pz + pz;
-                res.dz = p[3]*px*py - p[4]*pz;
-            }
-            else if (genType === 'thomas') {
-                res.dx = Math.sin(py) - p[0]*px;
-                res.dy = Math.sin(pz) - p[0]*py;
-                res.dz = Math.sin(px) - p[0]*pz;
-            }
-            else if (genType === 'aizawa') {
-                let x2 = px*px; let y2 = py*py;
-                res.dx = (pz - p[1])*px - p[3]*py;
-                res.dy = p[3]*px + (pz - p[1])*py;
-                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
-            }
-            else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
-        }
-        
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000;
-
-        for(let i=0; i<settleSteps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
+            let nextX = x + (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+            let nextY = y + (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+            let nextZ = z + (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
             
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
-
-        if (lyapunov < minL) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
-
-        return true;
-    }
-
-    function generateTrace(nSteps, density, seedOffset, c, genType, dtOverride) {
-        const totalPoints = nSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
-            x = (rand() - 0.5) * 3.0; 
-            y = (rand() - 0.5) * 3.0; 
-            z = (rand() - 0.5) * 3.0;
-        }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
-        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = 0.015;
-        if (genType === 'poly') dt = 0.05;
-        if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; 
-        if (genType === 'hindmarsh') dt = 0.02;
-
-        if (dtOverride) dt = dtOverride;
-
-        // Cache Coeffs
-        let p = c; 
-        
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
+            x = nextX; y = nextY; z = nextZ;
+            return { x:x, y:y, z:z, vel: logVel, curv: curv };
         }
 
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
-                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
-                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
-            } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
+        // 1. Settle
+        for(let i=0; i<2000; i++) stepPhysics();
+        for(let i=0; i<4; i++) history.push(stepPhysics());
+
+        let outIdx = 0;
+        let maxVel = 0;
+
+        for(let i=0; i<nSteps; i++) {
+            let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
+            if (Math.abs(p2.x) > 1000 || isNaN(p2.x)) break;
+
+            for(let d=0; d<density; d++) {
+                if (outIdx >= totalPoints) break;
+                let t = d / density; 
+                let px = catmullRom(p0.x, p1.x, p2.x, p3.x, t);
+                let py = catmullRom(p0.y, p1.y, p2.y, p3.y, t);
+                let pz = catmullRom(p0.z, p1.z, p2.z, p3.z, t);
+                
+                let pVel = p1.vel + (p2.vel - p1.vel) * t;
+                let pCurv = p1.curv + (p2.curv - p1.curv) * t;
+                if (pVel > maxVel) maxVel = pVel;
+
+                posData[outIdx*3] = px; posData[outIdx*3+1] = py; posData[outIdx*3+2] = pz;
+                metaData[outIdx*2] = pVel; metaData[outIdx*2+1] = pCurv;
+                outIdx++;
             }
-            else if (genType === 'rikitake') {
-                res.dx = -p[0]*px + py*pz;
-                res.dy = -p[0]*py + px*(p[1] - pz);
-                res.dz = 1.0 - px*py;
-            }
-            else if (genType === 'chua') {
-                let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
-                res.dx = p[0]*(py - px - h);
-                res.dy = px - py + pz;
-                res.dz = -p[1]*py;
-            }
-            else if (genType === 'hindmarsh') {
-                let x2 = px*px;
-                let x3 = x2*px;
-                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
-                res.dy = p[2] - p[3]*x2 - py;
-                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
-            }
-            else if (genType === 'moore') {
-                res.dx = py;
-                res.dy = pz;
-                res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
-            }
-            else if (genType === 'dadras') {
-                res.dx = py - p[0]*px + p[1]*py*pz;
-                res.dy = p[2]*py - px*pz + pz;
-                res.dz = p[3]*px*py - p[4]*pz;
-            }
-            else if (genType === 'thomas') {
-                res.dx = Math.sin(py) - p[0]*px;
-                res.dy = Math.sin(pz) - p[0]*py;
-                res.dz = Math.sin(px) - p[0]*pz;
-            }
-            else if (genType === 'aizawa') {
-                let x2 = px*px; let y2 = py*py;
-                res.dx = (pz - p[1])*px - p[3]*py;
-                res.dy = p[3]*px + (pz - p[1])*py;
-                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
-            }
-            else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
+            history.shift(); history.push(stepPhysics());
         }
         
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000;
-
-        for(let i=0; i<settleSteps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
+        if (maxVel > 0) {
+            for(let i=0; i<totalPoints; i++) metaData[i*2] /= maxVel;
         }
         
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
-            
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
+        // Auto-Centering & Scaling
+        let sumX=0, sumY=0, sumZ=0;
+        for(let i=0; i<totalPoints; i++) {
+            sumX += posData[i*3]; sumY += posData[i*3+1]; sumZ += posData[i*3+2];
         }
+        let avgX = sumX/totalPoints, avgY = sumY/totalPoints, avgZ = sumZ/totalPoints;
         
-        let lyapunov = lyapunovSum / steps;
-        
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
-
-        if (lyapunov < minL) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
-
-        return true;
-    }
-
-    function generateTrace(nSteps, density, seedOffset, c, genType, dtOverride) {
-        const totalPoints = nSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
-            x = (rand() - 0.5) * 3.0; 
-            y = (rand() - 0.5) * 3.0; 
-            z = (rand() - 0.5) * 3.0;
+        let sumDistSq = 0;
+        for(let i=0; i<totalPoints; i++) {
+            let px = posData[i*3]-avgX; let py = posData[i*3+1]-avgY; let pz = posData[i*3+2]-avgZ;
+            posData[i*3] = px; posData[i*3+1] = py; posData[i*3+2] = pz;
+            sumDistSq += px*px + py*py + pz*pz;
         }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
-        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = 0.015;
-        if (genType === 'poly') dt = 0.05;
-        if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; 
-        if (genType === 'hindmarsh') dt = 0.02;
-
-        if (dtOverride) dt = dtOverride;
-
-        // Cache Coeffs
-        let p = c; 
+        let rms = Math.sqrt(sumDistSq / totalPoints);
         
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
+        // GRN needs specific zoom (lives in [0,1])
+        let scaleTarget = 0.5;
+        if (genType === 'grn') scaleTarget = 0.8;
+        if (genType === 'dadras') scaleTarget = 0.35; // Large range
+        if (genType === 'thomas') scaleTarget = 0.5;
+        if (genType === 'aizawa') scaleTarget = 0.6;
+        if (genType === 'chua') scaleTarget = 0.2; // Chua is tiny
+        if (genType === 'hindmarsh') scaleTarget = 0.25; 
+        if (genType === 'moore') scaleTarget = 0.8; 
+        if (genType === 'rikitake') scaleTarget = 2.0;
+
+        if (rms > 0) {
+            let s = scaleTarget / rms;
+            for(let i=0; i<posData.length; i++) posData[i] *= s;
         }
 
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
-                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
-                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
-            } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
-            else if (genType === 'rikitake') {
-                res.dx = -p[0]*px + py*pz;
-                res.dy = -p[0]*py + px*(p[1] - pz);
-                res.dz = 1.0 - px*py;
-            }
-            else if (genType === 'chua') {
-                let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
-                res.dx = p[0]*(py - px - h);
-                res.dy = px - py + pz;
-                res.dz = -p[1]*py;
-            }
-            else if (genType === 'hindmarsh') {
-                let x2 = px*px;
-                let x3 = x2*px;
-                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
-                res.dy = p[2] - p[3]*x2 - py;
-                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
-            }
-            else if (genType === 'moore') {
-                res.dx = py;
-                res.dy = pz;
-                res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
-            }
-            else if (genType === 'dadras') {
-                res.dx = py - p[0]*px + p[1]*py*pz;
-                res.dy = p[2]*py - px*pz + pz;
-                res.dz = p[3]*px*py - p[4]*pz;
-            }
-            else if (genType === 'thomas') {
-                res.dx = Math.sin(py) - p[0]*px;
-                res.dy = Math.sin(pz) - p[0]*py;
-                res.dz = Math.sin(px) - p[0]*pz;
-            }
-            else if (genType === 'aizawa') {
-                let x2 = px*px; let y2 = py*py;
-                res.dx = (pz - p[1])*px - p[3]*py;
-                res.dy = p[3]*px + (pz - p[1])*py;
-                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
-            }
-            else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
-        }
-        
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000;
-
-        for(let i=0; i<settleSteps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
-            
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
-
-        if (lyapunov < minL) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
-
-        return true;
-    }
-
-    function generateTrace(nSteps, density, seedOffset, c, genType, dtOverride) {
-        const totalPoints = nSteps * density; 
-        
-        let posData = new Float32Array(totalPoints * 3);
-        let metaData = new Float32Array(totalPoints * 2); 
-        const rand = mulberry32(seedOffset + 12345);
-
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
-            x = (rand() - 0.5) * 3.0; 
-            y = (rand() - 0.5) * 3.0; 
-            z = (rand() - 0.5) * 3.0;
-        }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
-        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
-
-        let dt = 0.015;
-        if (genType === 'poly') dt = 0.05;
-        if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; 
-        if (genType === 'hindmarsh') dt = 0.02;
-
-        if (dtOverride) dt = dtOverride;
-
-        // Cache Coeffs
-        let p = c; 
-        
-        let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
-        let b0,b1,b2,b3,b4,b5,b6,b7,b8,b9;
-        let c0,c1,c2,c3,c4,c5,c6,c7,c8,c9;
-        if (genType === 'poly') {
-           a0=c[0]; a1=c[1]; a2=c[2]; a3=c[3]; a4=c[4]; a5=c[5]; a6=c[6]; a7=c[7]; a8=c[8]; a9=c[9];
-           b0=c[10]; b1=c[11]; b2=c[12]; b3=c[13]; b4=c[14]; b5=c[15]; b6=c[16]; b7=c[17]; b8=c[18]; b9=c[19];
-           c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
-        }
-
-        function calcD(px, py, pz, res) {
-            if (genType === 'sym') {
-                res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
-                res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
-                res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
-            } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
-            else if (genType === 'rikitake') {
-                res.dx = -p[0]*px + py*pz;
-                res.dy = -p[0]*py + px*(p[1] - pz);
-                res.dz = 1.0 - px*py;
-            }
-            else if (genType === 'chua') {
-                let h = p[3]*px + 0.5*(p[2]-p[3])*(Math.abs(px+1.0) - Math.abs(px-1.0));
-                res.dx = p[0]*(py - px - h);
-                res.dy = px - py + pz;
-                res.dz = -p[1]*py;
-            }
-            else if (genType === 'hindmarsh') {
-                let x2 = px*px;
-                let x3 = x2*px;
-                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
-                res.dy = p[2] - p[3]*x2 - py;
-                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
-            }
-            else if (genType === 'moore') {
-                res.dx = py;
-                res.dy = pz;
-                res.dz = -pz - (p[0] - p[1] + p[1]*px*px)*py - p[0]*px;
-            }
-            else if (genType === 'dadras') {
-                res.dx = py - p[0]*px + p[1]*py*pz;
-                res.dy = p[2]*py - px*pz + pz;
-                res.dz = p[3]*px*py - p[4]*pz;
-            }
-            else if (genType === 'thomas') {
-                res.dx = Math.sin(py) - p[0]*px;
-                res.dy = Math.sin(pz) - p[0]*py;
-                res.dz = Math.sin(px) - p[0]*pz;
-            }
-            else if (genType === 'aizawa') {
-                let x2 = px*px; let y2 = py*py;
-                res.dx = (pz - p[1])*px - p[3]*py;
-                res.dy = p[3]*px + (pz - p[1])*py;
-                res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
-            }
-            else {
-                res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
-                res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
-                res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
-            }
-        }
-        
-        let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
-        
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000;
-
-        for(let i=0; i<settleSteps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
-        }
-        
-        sx = x + 0.000001; sy = y; sz = z;
-        let lyapunovSum = 0;
-        let d0 = 0.000001;
-        let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
-        
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-
-        const visited = new Set();
-        let steps = 3000;
-        
-        for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-
-            if (Math.abs(x) > 100) return false;
-
-            let dx = x - sx, dy = y - sy, dz = z - sz;
-            let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            if (d < 1e-15) return false; 
-            lyapunovSum += Math.log(d / d0);
-            let s = d0 / d;
-            sx = x - (dx * s); sy = y - (dy * s); sz = z - (dz * s);
-            
-            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-
-            if (i % 5 === 0) visited.add(Math.floor(x/voxRes)+","+Math.floor(y/voxRes)+","+Math.floor(z/voxRes));
-        }
-        
-        let lyapunov = lyapunovSum / steps;
-        
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.005; minWidth=5.0; minVol=50; }
-
-        if (lyapunov < minL) return false;
-        
-        let wX = maxX - minX, wY = maxY - minY, wZ = maxZ - minZ;
-        if ((wX + wY + wZ) < minWidth) return false;
-        if (visited.size < minVol) return false;
-        if (lyapunov > 2.0) return false;
-
-        return true;
+        return { buffer: posData.buffer, metaBuffer: metaData.buffer };
     }
 `;
 
@@ -2465,44 +1456,34 @@ function updatePowerUI() {
     const type = selectGenType.value;
     const defs = GEN_DEFS[type];
     
-    // Use cached settings if available, else standard defaults
-    const current = powerSettingsCache[type] || { dt: defs.dt, params: defs.params.map(p => ({ idx: p.idx, valMin: p.valMin, valMax: p.valMax })) };
-    
     let html = `<h3 style="margin-top:0; color:#0f0">⚡ Power Mode: ${defs.label}</h3>`;
     html += `<div style="margin-bottom:15px; font-size:12px; color:#aaa;">Define search ranges for the miner.</div>`;
     
     // DT Input
     html += `<div style="margin-bottom:10px;">
         <label>Time Step (dt)</label>
-        <input type="number" id="pm-dt" value="${current.dt}" step="0.0001" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+        <input type="number" id="pm-dt" value="${defs.dt}" step="0.0001" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
     </div>`;
 
     if (defs.params.length === 0) {
         html += `<div style="color:#666; padding:10px; border:1px dashed #444;">No configurable parameters for this generator yet.</div>`;
     } else {
         defs.params.forEach((p, i) => {
-            // Find current values for this parameter index
-            const cachedP = current.params.find(cp => cp.idx === p.idx) || p;
-            
             html += `<div style="border-top:1px solid #333; padding: 10px 0;">
                 <div style="color:#fff; font-weight:bold; margin-bottom:5px;">${p.name}</div>
                 <div style="display:flex; gap:10px; align-items:center;">
-                    <input type="number" id="pm-min-${i}" value="${cachedP.valMin}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+                    <input type="number" id="pm-min-${i}" value="${p.valMin}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
                     <span style="color:#888;">to</span>
-                    <input type="number" id="pm-max-${i}" value="${cachedP.valMax}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+                    <input type="number" id="pm-max-${i}" value="${p.valMax}" step="0.1" style="width:45%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
                 </div>
             </div>`;
         });
     }
 
-    html += `<div style="display:flex; gap:10px; margin-top:15px;">
-        <button id="pm-reset" style="flex:1; padding:12px; background:#400; color:#fff; font-weight:bold; border:1px solid #f00; cursor:pointer;">RESET</button>
-        <button id="pm-apply" style="flex:2; padding:12px; background:#0f0; color:#000; font-weight:bold; border:none; cursor:pointer;">APPLY & MINE ⛏️</button>
-    </div>`;
+    html += `<button id="pm-apply" style="width:100%; padding:12px; background:#0f0; color:#000; font-weight:bold; border:none; margin-top:15px; cursor:pointer;">APPLY & MINE ⛏️</button>`;
     
     powerModal.innerHTML = html;
 
-    // Apply Button
     document.getElementById('pm-apply').onclick = () => {
         const newDt = parseFloat(document.getElementById('pm-dt').value);
         const newParams = defs.params.map((p, i) => ({
@@ -2511,22 +1492,12 @@ function updatePowerUI() {
             valMax: parseFloat(document.getElementById(`pm-max-${i}`).value)
         }));
 
-        const newConstraints = { dt: newDt, params: newParams };
-        powerSettingsCache[type] = newConstraints; // Save to Cache
-        currentConstraints = newConstraints; // Set Active
-        
+        currentConstraints = { dt: newDt, params: newParams };
         powerModal.style.display = 'none';
         overlay.style.display = 'none';
         
         uiStatus.innerText = "Mining with Constraints...";
         worker.postMessage({ type: 'mine', genType: type, constraints: currentConstraints });
-    };
-
-    // Reset Button
-    document.getElementById('pm-reset').onclick = () => {
-        delete powerSettingsCache[type];
-        currentConstraints = null; // Clear active constraints immediately
-        updatePowerUI(); // Rebuild UI with defaults
     };
 }
 
@@ -2538,7 +1509,6 @@ function createSection(title, contentHTML) {
     
     const content = document.createElement('div');
     content.className = 'ui-content';
-    content.style.display = 'none'; // FIX: Explicitly set display none for first-click fix
     content.innerHTML = contentHTML;
 
     header.onclick = () => {
@@ -2566,7 +1536,7 @@ div.appendChild(createSection("GENERATION", `
         <option value="hindmarsh">Hindmarsh-Rose (Neuron)</option>
         <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
-    <div style="display:flex; gap:5px; margin-bottom:10px;">
+    <div style="display:flex; gap:5px; margin-bottom:5px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ MINE</button>
         <button id="ui-btn-mutate" style="flex:1; cursor:pointer; background:#440044; color:#fff; border:1px solid #f0f; padding:10px;">🧬 MUTATE</button>
     </div>
@@ -2781,15 +1751,7 @@ checkTransparent.onchange = (e) => { exportTransparent = e.target.checked; };
 
 selectGenType.onchange = (e) => { 
     currentGenType = e.target.value;
-    
-    // Check if we have cached constraints for this type
-    currentConstraints = powerSettingsCache[currentGenType] || null;
-    
-    if (currentConstraints) {
-        uiStatus.innerText = "Loaded Custom Constraints";
-    } else {
-        uiStatus.innerText = "Ready";
-    }
+    currentConstraints = null; // Reset constraints on type switch
 };
 
 inputBg1.oninput = (e) => { bgA = hexToRgb(e.target.value); };
@@ -2834,11 +1796,11 @@ sliderSize.oninput = (e) => { currentPointSize = parseInt(e.target.value) / 10.0
 sliderVariation.oninput = (e) => { currentVariation = parseInt(e.target.value) / 100.0; };
 sliderLength.oninput = (e) => {
     currentPhysicsSteps = parseInt(e.target.value);
-    if(currentCoeffs) worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType, constraints: currentConstraints });
+    if(currentCoeffs) worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType });
 };
 sliderDensity.oninput = (e) => { 
     currentDensity = parseInt(e.target.value);
-    if(currentCoeffs) worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType, constraints: currentConstraints });
+    if(currentCoeffs) worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType });
 };
 sliderJitter.oninput = (e) => { currentJitter = parseInt(e.target.value) / 10.0; };
 sliderGamma.oninput = (e) => { currentGamma = parseInt(e.target.value) / 10.0; };
@@ -2868,7 +1830,7 @@ btnMutate.onclick = () => {
 btnSave.onclick = () => { 
     if (!currentCoeffs) return; 
     const meta = serializeState();
-    const data = { coeffs: Array.from(currentCoeffs), settings: meta, constraints: currentConstraints };
+    const data = { coeffs: Array.from(currentCoeffs), settings: meta };
     const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); 
@@ -2884,24 +1846,13 @@ fileInput.onchange = (e) => {
         try { 
             const d = JSON.parse(ev.target.result); 
             currentCoeffs = Object.values(d.coeffs || d).map(Number); 
-            
-            // Restore Power Mode Constraints if they exist
-            if(d.constraints) {
-                currentConstraints = d.constraints;
-                powerSettingsCache[d.settings.genType] = d.constraints;
-            }
-
             applyState(d);
-            worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType, constraints: currentConstraints }); 
+            worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType }); 
             uiStatus.innerText = "Loaded " + (d.settings ? d.settings.id : "Legacy"); 
         } catch(e){console.error(e);} 
     }; 
     if(e.target.files[0]) r.readAsText(e.target.files[0]); 
 };
-
-// --- SYNC INITIAL UI STATE ---
-// Fix: Ensure dropdown matches the global variable on load
-selectBlend.value = blendMode;
 
 
 canvas.oncontextmenu = (e) => e.preventDefault();
