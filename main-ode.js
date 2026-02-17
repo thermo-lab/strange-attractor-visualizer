@@ -1075,6 +1075,8 @@ void main() {
         if (u_show_guide == 1) {
             float viewAspect = u_res.x / u_res.y;
             float targetAspect = u_print_aspect;
+            
+            // 1. Print is NARROWER than Screen (Vertical Bars / Pillarbox)
             if (targetAspect < viewAspect) {
                 float safeRatio = targetAspect / viewAspect;
                 float margin = (1.0 - safeRatio) * 0.5;
@@ -1084,6 +1086,19 @@ void main() {
                 }
                 float lineW = 1.0 / u_res.x; 
                 if (abs(globalUV.x - margin) < lineW || abs(globalUV.x - (1.0-margin)) < lineW) {
+                    finalRGB = vec3(0.5, 0.5, 0.5); 
+                }
+            } 
+            // 2. Print is WIDER than Screen (Horizontal Bars / Letterbox)
+            else if (targetAspect > viewAspect) {
+                float safeRatio = viewAspect / targetAspect;
+                float margin = (1.0 - safeRatio) * 0.5;
+                if (globalUV.y < margin || globalUV.y > (1.0 - margin)) {
+                    finalRGB *= 0.3; 
+                    finalRGB += vec3(0.1, 0.1, 0.1); 
+                }
+                float lineH = 1.0 / u_res.y; 
+                if (abs(globalUV.y - margin) < lineH || abs(globalUV.y - (1.0-margin)) < lineH) {
                     finalRGB = vec3(0.5, 0.5, 0.5); 
                 }
             }
@@ -2381,9 +2396,6 @@ async function startTiledExport(mode = 'download') {
     const screenAspect = canvas.width / canvas.height;
     const printAspect = totalW / totalH;
     
-    // Auto-Compensate PanX so export matches screen center despite aspect change
-    const compensatedPanX = camPanX * (printAspect / screenAspect);
-
     const meta = serializeState(); 
     const exportID = meta.id;
 
@@ -2439,7 +2451,7 @@ async function startTiledExport(mode = 'download') {
                         constraints: meta.constraints 
                     });
                 });
-                renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, compensatedPanX);
+                renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, camPanX);
             }
             
             gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
