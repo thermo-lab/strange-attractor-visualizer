@@ -1373,6 +1373,69 @@ function applyState(data) {
     sliderVariation.value = currentVariation * 100;
 }
 
+//
+function writePngDpi(blob, dpi) {
+    // 1. Convert DPI to Pixels Per Meter (PNG standard)
+    // 1 inch = 0.0254 meters
+    const pixelsPerMeter = Math.round(dpi / 0.0254);
+    
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const buffer = e.target.result;
+            const view = new DataView(buffer);
+            
+            // Check for PNG signature
+            if (view.getUint32(0) !== 0x89504E47) {
+                resolve(blob); // Not a PNG, return original
+                return;
+            }
+
+            // 2. Create the pHYs chunk
+            // Length (4) + Type (4) + Data (9) + CRC (4) = 21 bytes
+            const physChunk = new Uint8Array(21);
+            const physView = new DataView(physChunk.buffer);
+            
+            physView.setUint32(0, 9); // Length of data
+            // Type: "pHYs" (0x70485973)
+            physChunk.set([112, 72, 89, 115], 4); 
+            
+            physView.setUint32(8, pixelsPerMeter); // X axis
+            physView.setUint32(12, pixelsPerMeter); // Y axis
+            physChunk[16] = 1; // Unit specifier: 1 = meter
+            
+            // Calculate CRC for Type + Data (bytes 4 to 16)
+            const crcInput = physChunk.subarray(4, 17);
+            const crc = crc32(crcInput);
+            physView.setUint32(17, crc);
+
+            // 3. Construct new Blob: Signature + IHDR + pHYs + rest
+            // IHDR is always the first chunk, 13 bytes data + 12 bytes overhead = 25 bytes
+            // plus 8 byte signature = 33 bytes total for start.
+            const newBlob = new Blob([
+                buffer.slice(0, 33), // Sig + IHDR
+                physChunk,           // Insert pHYs
+                buffer.slice(33)     // Rest of file (IDAT, IEND)
+            ], { type: 'image/png' });
+
+            resolve(newBlob);
+        };
+        reader.readAsArrayBuffer(blob);
+    });
+}
+
+// CRC32 Table-less implementation (compact)
+function crc32(buf) {
+    let crc = -1;
+    for (let i = 0; i < buf.length; i++) {
+        crc ^= buf[i];
+        for (let j = 0; j < 8; j++) {
+            crc = (crc >>> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+        }
+    }
+    return (crc ^ -1) >>> 0;
+}
+
 // ==========================================
 // 4. UI GENERATION (RESPONSIVE)
 // ==========================================
@@ -2545,14 +2608,22 @@ async function startTiledExport(mode = 'download') {
     gl.deleteTexture(tex);
     gl.deleteTexture(resolveTex);
     
-    if (mode === 'download') {
-        uiExport.innerText = "Saving to disk...";
-        masterCanvas.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
+// ... inside startTiledExport ...
+    gl.deleteTexture(resolveTex);
+    
+    // FIX: Inject DPI metadata before Saving or Uploading
+    masterCanvas.toBlob(async (rawBlob) => {
+        // Inject the correct DPI (pHYs chunk)
+        const finalBlob = await writePngDpi(rawBlob, dpi);
+
+        if (mode === 'download') {
+            uiExport.innerText = "Saving to disk...";
+            const url = URL.createObjectURL(finalBlob); // Use finalBlob
             const a = document.createElement('a');
             a.href = url; a.download = `attractor_${exportID}_${inchesW}x${inchesH}in_${dpi}dpi.png`; 
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             
+            // Save JSON (existing code...)
             const data = { coeffs: Array.from(currentCoeffs), settings: meta };
             const jsonBlob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
             const jUrl = URL.createObjectURL(jsonBlob);
@@ -2561,14 +2632,14 @@ async function startTiledExport(mode = 'download') {
             document.body.appendChild(jA); jA.click(); document.body.removeChild(jA);
             
             resetRenderState();
-        }, 'image/png'); 
 
-    } else if (mode === 'pod') {
-        uiExport.innerText = "Preparing Upload...";
-        masterCanvas.toBlob((blob) => {
-             startPrintCheckout(blob);
-        }, 'image/png');
-    }
+        } else if (mode === 'pod') {
+            uiExport.innerText = "Preparing Upload...";
+            // Upload the blob with the correct metadata
+            startPrintCheckout(finalBlob); 
+        }
+    }, 'image/png');
+
 }
 
 function resetRenderState() {
