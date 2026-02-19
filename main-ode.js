@@ -8,7 +8,7 @@
    - Auto-Matching JSON/PNG Export
    - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa, Rikitake, Chua, Hindmarsh-Rose, Moore-Spiegel
    - Power User Mode: Dynamic Search Bounds & Delta-Time control
-   - POD (Print on Demand) Integration via Prodigi (Backend Proxy) + reCAPTCHA v3
+   - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
 // ==========================================
@@ -17,8 +17,7 @@
 const MAX_ALLOCATION = 50000000; 
 
 // --- POD CONFIG ---
-// NOTE: Your Google Script must now handle the 'create_prodigi_order' action.
-const POD_API_URL = "https://script.google.com/macros/s/AKfycby2IQIuujQFb-dF5RGAP8r9qbKyYsQUp6BnYBgeIjyCnewuq-HwV3EKI_MS97gr6VLS/exec"; 
+const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
 const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; 
 
 // --- DETECT MOBILE ---
@@ -2264,15 +2263,12 @@ async function startPrintCheckout(blob) {
 
     uiExport.innerText = "⏳ Requesting Cloud Storage...";
 
-    // 1. Authenticate & Get Upload URL
     const authResp = await fetch(POD_API_URL + "?recaptcha_token=" + token);
     const authData = await authResp.json();
     
     if (authData.error) throw new Error(authData.error);
 
     uiExport.innerText = "☁️ Uploading High-Res Image...";
-    
-    // 2. Upload Image
     const uploadResp = await fetch(authData.uploadUrl, {
       method: "PUT",
       body: blob,
@@ -2283,38 +2279,8 @@ async function startPrintCheckout(blob) {
 
     const signedUrl = authData.publicUrl;
     
-    uiExport.innerText = "🛒 Creating Order at Prodigi...";
-
-uiExport.innerText = "🛒 Creating Order at Prodigi...";
-
-    // Generate a FRESH token for the second API call
-    const orderToken = await new Promise((resolve) => {
-        grecaptcha.ready(() => {
-            grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: 'create_order'}).then(resolve);
-        });
-    });
-
-    // 3. Create Order via Backend Proxy
-    const orderResp = await fetch(POD_API_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-            action: 'create_prodigi_order',
-            imageUrl: signedUrl,
-            width: inpW.value,
-            height: inpH.value,
-            dpi: inpDPI.value,
-            token: orderToken // <--- Use the new token here
-        })
-    });
-    
-    const orderData = await orderResp.json();
-    if (orderData.error) throw new Error(orderData.error);
-    if (!orderData.checkoutUrl) throw new Error("No checkout URL returned from backend");
-
     uiExport.innerText = "✅ Ready.";
 
-    // 4. Render Checkout Button
     const actionContainerId = 'pod-action-container';
     let actionContainer = document.getElementById(actionContainerId);
     if (actionContainer) actionContainer.remove(); 
@@ -2324,27 +2290,73 @@ uiExport.innerText = "🛒 Creating Order at Prodigi...";
     actionContainer.style.marginTop = "10px";
     actionContainer.style.borderTop = "1px solid #555";
     actionContainer.style.paddingTop = "10px";
+    
+    // Match the side padding of the other UI elements
     actionContainer.style.margin = "0 10px 10px 10px"; 
 
-    const checkoutBtn = document.createElement('a');
-    checkoutBtn.href = orderData.checkoutUrl; 
-    checkoutBtn.target = "_blank"; 
-    checkoutBtn.style.display = "block";
-    checkoutBtn.style.backgroundColor = "#222";
-    checkoutBtn.style.color = "#0f0"; 
-    checkoutBtn.style.padding = "10px";
-    checkoutBtn.style.border = "1px solid #0f0"; 
-    checkoutBtn.style.fontFamily = "monospace"; 
-    checkoutBtn.style.textAlign = "center";
-    checkoutBtn.style.textDecoration = "none";
-    checkoutBtn.style.fontWeight = "bold";
-    checkoutBtn.innerText = "COMPLETE PAYMENT ↗️"; 
+    const inchesW = parseFloat(inpW.value);
+    const inchesH = parseFloat(inpH.value);
+    const dpi = parseInt(inpDPI.value);
+    
+    let totalW, totalH;
+    
+    if (exportUnit === 'pixels') {
+        totalW = Math.floor(inchesW);
+        totalH = Math.floor(inchesH);
+    } else {
+        totalW = Math.floor(inchesW * dpi);
+        totalH = Math.floor(inchesH * dpi);
+    }
+    
+    const masterCanvas = document.createElement('canvas');
+    masterCanvas.width = totalW;
+    masterCanvas.height = totalH;
 
-    actionContainer.appendChild(checkoutBtn);
+    const peechoLink = document.createElement('a');
+    peechoLink.href = "https://www.peecho.com"; 
+    peechoLink.target = "_blank"; 
+
+    peechoLink.className = "peecho-print-button";     
+    peechoLink.setAttribute('data-src', signedUrl);
+    peechoLink.setAttribute('data-thumbnail', signedUrl);
+    peechoLink.setAttribute('data-filetype', 'image');
+    peechoLink.setAttribute('data-width', masterCanvas.width);
+    peechoLink.setAttribute('data-height', masterCanvas.height);
+    peechoLink.setAttribute('data-pages', '1');
+    peechoLink.setAttribute('data-reference', 'Strange Attractor #' + generateID());
+
+    const innerBtn = document.createElement('button');
+    innerBtn.innerText = "Review order options ↗️"; 
+    
+    innerBtn.style.backgroundColor = "#222";
+    innerBtn.style.color = "#fff"; 
+    innerBtn.style.padding = "10px";
+    innerBtn.style.border = "1px solid #0f0"; 
+    innerBtn.style.fontFamily = "monospace"; 
+    innerBtn.style.fontSize = "12px";
+    innerBtn.style.cursor = "pointer";
+    innerBtn.style.width = "100%"; 
+    innerBtn.style.fontWeight = "bold";
+
+    peechoLink.appendChild(innerBtn);
+    actionContainer.appendChild(peechoLink);
 
     const footer = document.getElementById('ui-main-status')?.parentNode;
     if(footer) container.insertBefore(actionContainer, footer);
     else container.appendChild(actionContainer);
+
+    const scriptId = 'peecho-sdk-script';
+    if (!document.getElementById(scriptId)) {
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = "https://d3aln0nj58oevo.cloudfront.net/button/script/177021676045966460.js";
+        document.body.appendChild(script);
+    } else {
+        if (window.Peecho && window.Peecho.refresh) {
+            console.log("Refreshing Peecho buttons...");
+            window.Peecho.refresh();
+        }
+    }
 
     allButtons.forEach(b => b.disabled = false);
 
@@ -2603,12 +2615,12 @@ async function startTiledExport(mode = 'download') {
 
         if (mode === 'download') {
             uiExport.innerText = "Saving to disk...";
-            const url = URL.createObjectURL(finalBlob); // Use finalBlob
+            const url = URL.createObjectURL(finalBlob); 
             const a = document.createElement('a');
             a.href = url; a.download = `attractor_${exportID}_${inchesW}x${inchesH}in_${dpi}dpi.png`; 
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             
-            // Save JSON (existing code...)
+            // Save JSON 
             const data = { coeffs: Array.from(currentCoeffs), settings: meta };
             const jsonBlob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
             const jUrl = URL.createObjectURL(jsonBlob);
