@@ -18,7 +18,7 @@ const MAX_ALLOCATION = 50000000;
 
 // --- POD CONFIG ---
 // NOTE: Your Google Script must now handle the 'create_prodigi_order' action.
-const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
+const POD_API_URL = "https://script.google.com/macros/s/AKfycby2IQIuujQFb-dF5RGAP8r9qbKyYsQUp6BnYBgeIjyCnewuq-HwV3EKI_MS97gr6VLS/exec"; 
 const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; 
 
 // --- DETECT MOBILE ---
