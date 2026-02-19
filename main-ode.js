@@ -2285,8 +2285,16 @@ async function startPrintCheckout(blob) {
     
     uiExport.innerText = "🛒 Creating Order at Prodigi...";
 
+uiExport.innerText = "🛒 Creating Order at Prodigi...";
+
+    // Generate a FRESH token for the second API call
+    const orderToken = await new Promise((resolve) => {
+        grecaptcha.ready(() => {
+            grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: 'create_order'}).then(resolve);
+        });
+    });
+
     // 3. Create Order via Backend Proxy
-    // Note: Your backend script must handle 'create_prodigi_order' logic
     const orderResp = await fetch(POD_API_URL, {
         method: 'POST',
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -2296,7 +2304,7 @@ async function startPrintCheckout(blob) {
             width: inpW.value,
             height: inpH.value,
             dpi: inpDPI.value,
-            token: token
+            token: orderToken // <--- Use the new token here
         })
     });
     
