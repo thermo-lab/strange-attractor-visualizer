@@ -117,13 +117,13 @@ let bgB = [0.1, 0.1, 0.1];
 let bgParams = [0.0, 0.5, 1.0]; 
 
 // Performance Defaults
-let currentPhysicsSteps = 1000000; 
-let currentOpacity = 0.02;          
+let currentPhysicsSteps = 200000; 
+let currentOpacity = 0.06;          
 let currentIntensity = 2.0;  
 let currentGamma = 1.8;
 let currentNoise = 0.05;      
 let currentPointSize = 1.0;
-let currentDensity = 1;
+let currentDensity = 12;
 let currentJitter = 0.5;
 let currentVariation = 0.0;
 let isExporting = false; 
@@ -134,10 +134,10 @@ let exportTransparent = false;
 
 // --- MOBILE SAFE DEFAULTS ---
 if (isMobile) {
-    currentPhysicsSteps = 250000; // Cap at 250k for safety
+    currentPhysicsSteps = 200000; // Cap at 250k for safety
     currentPointSize = 2.5;       // Thicker lines for small high-DPI screens
     camZoom = 1.5;                // Zoom out slightly
-    currentDensity = 1;           // Keep density low
+    currentDensity = 12;           // Keep density low
 }
 
 // --- VIEWPORT FBO REFS ---
@@ -1568,10 +1568,14 @@ toggleBtn.innerText = '⚙️';
 toggleBtn.onclick = (e) => {
     e.stopPropagation(); // Prevent canvas click
     const panel = document.getElementById('colorControls');
+    const quickBtn = document.getElementById('ui-quick-search-btn'); // Target the new button
+    
     if (panel.style.display === 'none') {
         panel.style.display = 'block';
+        if(quickBtn) quickBtn.style.display = 'none'; // Hide quick search when panel opens
     } else {
         panel.style.display = 'none';
+        if(quickBtn) quickBtn.style.display = 'flex'; // Show quick search when panel closes
     }
 };
 document.body.appendChild(toggleBtn);
@@ -1579,6 +1583,8 @@ document.body.appendChild(toggleBtn);
 // --- ADD THE QUICK SEARCH BUTTON ---
 const quickSearchBtn = document.createElement('button');
 quickSearchBtn.id = 'ui-quick-search-btn';
+// On mobile, the panel is hidden, so show the button. On desktop, panel is open, so hide it.
+quickSearchBtn.style.display = isMobile ? 'flex' : 'none';
 quickSearchBtn.innerText = '⛏️ SEARCH!';
 quickSearchBtn.onclick = (e) => {
     e.stopPropagation(); // Prevent canvas interaction
@@ -1744,9 +1750,9 @@ div.appendChild(createSection("GENERATION", `
         <input type="file" id="ui-file-input" style="display:none" accept=".json">
     </div>
     <div style="color:#0f0; margin-bottom:5px;">LENGTH (Trail)</div>
-    <input type="range" id="ui-length" min="10000" max="2000000" step="10000" value="1000000" style="width:100%;">
+    <input type="range" id="ui-length" min="10000" max="2000000" step="10000" value="200000" style="width:100%;">
     <div style="color:#0f0; margin-bottom:5px;">SMOOTHNESS (Precision)</div>
-    <input type="range" id="ui-density" min="1" max="50" value="1" style="width:100%;">
+    <input type="range" id="ui-density" min="1" max="50" value="12" style="width:100%;">
     <div style="color:#0f0; margin-bottom:5px;">VARIATION (Texture)</div>
     <input type="range" id="ui-variation" min="0" max="100" value="0" style="width:100%;">
 `));
@@ -1785,7 +1791,7 @@ div.appendChild(createSection("ADJUSTMENT", `
     <input type="range" id="ui-intensity" min="0" max="150" value="20" style="width:100%;">
     
     <div style="color:#0f0; margin-bottom:5px;">OPACITY (Alpha)</div>
-    <input type="range" id="ui-opacity" min="1" max="300" value="20" style="width:100%;">
+    <input type="range" id="ui-opacity" min="1" max="300" value="60" style="width:100%;">
     
     <div style="color:#0f0; margin-bottom:5px;">SIZE (Thickness)</div>
     <input type="range" id="ui-size" min="1" max="50" value="10" style="width:100%;">
