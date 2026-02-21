@@ -1499,6 +1499,33 @@ style.textContent = `
         box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
     }
 
+/* Quick Search Button - Fixed Bottom Right (Next to Gear) */
+    #ui-quick-search-btn {
+        position: absolute;
+        bottom: 20px;
+        right: 70px; /* 20px margin + 40px gear + 10px gap */
+        background: #0f0;
+        color: #000;
+        border: 1px solid #0f0;
+        height: 40px;
+        padding: 0 20px;
+        font-size: 16px;
+        font-weight: bold;
+        font-family: monospace;
+        cursor: pointer;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+        transition: background 0.2s, color 0.2s;
+    }
+    #ui-quick-search-btn:hover {
+        background: #fff;
+        color: #000;
+        border-color: #fff;
+    }
+
     /* --- MOBILE OVERRIDES --- */
     @media (max-width: 600px) {
         #colorControls {
@@ -1524,6 +1551,12 @@ style.textContent = `
             min-height: 35px; 
             margin-bottom: 5px;
         }
+
+#ui-quick-search-btn {
+            height: 50px;
+            right: 80px; /* 20px margin + 50px gear + 10px gap */
+            border-radius: 25px; /* Pill shape to match circular gear */
+        }
     }
 `;
 document.head.appendChild(style);
@@ -1542,6 +1575,30 @@ toggleBtn.onclick = (e) => {
     }
 };
 document.body.appendChild(toggleBtn);
+
+// --- ADD THE QUICK SEARCH BUTTON ---
+const quickSearchBtn = document.createElement('button');
+quickSearchBtn.id = 'ui-quick-search-btn';
+quickSearchBtn.innerText = '⛏️ SEARCH!';
+quickSearchBtn.onclick = (e) => {
+    e.stopPropagation(); // Prevent canvas interaction
+    
+    // Update UI Status (mirroring the main MINE button behavior)
+    const uiStatus = document.getElementById('ui-main-status');
+    if(uiStatus) {
+        uiStatus.innerText = "Scanning..."; 
+        uiStatus.style.color = "#ffff00"; 
+    }
+    
+    // Trigger the worker to mine a new attractor
+    worker.postMessage({
+        type: 'mine', 
+        genType: currentGenType, 
+        constraints: currentConstraints
+    }); 
+};
+document.body.appendChild(quickSearchBtn);
+// -----------------------------------
 
 const div = document.createElement('div');
 div.id = 'colorControls';
