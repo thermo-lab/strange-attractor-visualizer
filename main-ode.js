@@ -815,7 +815,8 @@ uniform float u_pointCount;
 
 uniform float u_focusDist; 
 uniform float u_focusSpan; 
-uniform float u_aperture;  
+uniform float u_aperture;
+uniform float u_opacity;
 
 out float v_vel;
 out float v_curv;
@@ -2611,9 +2612,9 @@ async function startTiledExport(mode = 'download') {
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.ONE, gl.ONE); 
 
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, gaussianTex);
-            gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
+            //gl.activeTexture(gl.TEXTURE0);
+            //gl.bindTexture(gl.TEXTURE_2D, gaussianTex);
+            //gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
           
             for (let p = 0; p < passes; p++) {
                 uiExport.innerText = `Tile ${y*cols + x + 1}/${rows*cols} - Pass ${p+1}/${passes}`;
