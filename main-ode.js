@@ -887,6 +887,13 @@ void main() {
     float jy = (hash(float(gl_VertexID) + 123.45) - 0.5) * u_jitter;
     vec2 pixelSize = 2.0 / u_resolution; 
     gl_Position.xy += vec2(jx, jy) * pixelSize;
+
+    // OPTIMIZATION: Vertex Culling
+    // If the particle is effectively invisible due to extreme depth blur and low global opacity,
+    // throw it outside the clip space (off-screen) so the rasterizer ignores it completely.
+    if (v_attenuation * u_opacity < 0.0001) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0); 
+    }
 }`;
 
 const fsSource = `#version 300 es
@@ -898,7 +905,7 @@ in float v_time;
 in vec3 v_pos;
 in float v_attenuation; 
 
-uniform sampler2D u_sprite; 
+// REMOVED u_sprite uniform
 uniform int u_colorMode;
 uniform vec3 u_colorSeed; 
 uniform float u_opacity;
@@ -916,8 +923,21 @@ vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
 }
 
 void main() {
-    float shapeAlpha = texture(u_sprite, gl_PointCoord).a;
-    if (shapeAlpha < 0.01) discard; 
+    // --- PROCEDURAL SPLAT MATH ---
+    // Calculate distance from the center of the point (0.0 to 0.5)
+    float dist = length(gl_PointCoord - vec2(0.5));
+    
+    // Circular crop: if outside the circle, discard immediately
+    if (dist > 0.5) discard; 
+    
+    // Smooth Gaussian-like falloff using exponential decay
+    float shapeAlpha = exp(-dist * dist * 16.0); 
+
+    // Calculate final opacity early
+    float finalOpac = u_opacity * v_attenuation * shapeAlpha;
+    
+    // OPTIMIZATION: Discard nearly invisible fragments before doing complex color math
+    if (finalOpac < 0.001) discard;
 
     float val = 0.0;
     if (u_colorMode == 0) val = pow(v_vel, 0.5); 
@@ -949,7 +969,6 @@ void main() {
         rgb = pow(rgb, vec3(1.5)); 
     }
 
-    float finalOpac = u_opacity * v_attenuation * shapeAlpha;
     outColor = vec4(rgb * u_intensity * finalOpac, finalOpac); 
 }`;
 
@@ -2431,9 +2450,9 @@ async function startPrintCheckout(blob) {
 }
 
 function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jitter, overridePanX, overridePanY, overrideZoom) {
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
-    gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
+    //gl.activeTexture(gl.TEXTURE0);
+    //gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
+    //gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
 
     const rotMatrix = qToMatrix(currentQuat);
     gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
@@ -2733,9 +2752,9 @@ function renderFrame() {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE);
         
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
-        gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
+        //gl.activeTexture(gl.TEXTURE0);
+        //gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
+        //gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
         
         const rotMatrix = qToMatrix(currentQuat);
         gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
