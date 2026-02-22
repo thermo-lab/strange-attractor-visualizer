@@ -2836,3 +2836,15 @@ function loop() {
     requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// --- INITIAL AUTO-SEARCH ---
+// Trigger the first search automatically so the canvas isn't empty on load.
+setTimeout(() => {
+    const uiStatus = document.getElementById('ui-main-status');
+    if (uiStatus) {
+        uiStatus.innerText = "Initializing First Attractor...";
+        uiStatus.style.color = "#ffff00";
+    }
+    // Simulate a click on the hidden main mine button to kick off the worker
+    if (btnMine) btnMine.click();
+}, 100); // 100ms delay ensures the UI and WebGL context are fully painted and ready
