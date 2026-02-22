@@ -892,7 +892,7 @@ void main() {
     // OPTIMIZATION: Vertex Culling
     // If the particle is effectively invisible due to extreme depth blur and low global opacity,
     // throw it outside the clip space (off-screen) so the rasterizer ignores it completely.
-    if (v_attenuation * u_opacity < 0.00000001) {
+    if (v_attenuation * u_opacity < 0.0000001) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0); 
     }
 }`;
@@ -938,7 +938,7 @@ void main() {
     float finalOpac = u_opacity * v_attenuation * shapeAlpha;
     
     // OPTIMIZATION: Discard nearly invisible fragments before doing complex color math
-    if (finalOpac < 0.0000001) discard;
+    if (finalOpac < 0.000001) discard;
 
     float val = 0.0;
     if (u_colorMode == 0) val = pow(v_vel, 0.5); 
