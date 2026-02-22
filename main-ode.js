@@ -938,7 +938,7 @@ void main() {
     float finalOpac = u_opacity * v_attenuation * shapeAlpha;
     
     // OPTIMIZATION: Discard nearly invisible fragments before doing complex color math
-    if (finalOpac < 0.00001) discard;
+    if (finalOpac < 0.000001) discard;
 
     float val = 0.0;
     if (u_colorMode == 0) val = pow(v_vel, 0.5); 
