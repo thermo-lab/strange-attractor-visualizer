@@ -2857,14 +2857,70 @@ function loop() {
 }
 requestAnimationFrame(loop);
 
-// --- INITIAL AUTO-SEARCH ---
-// Trigger the first search automatically so the canvas isn't empty on load.
-setTimeout(() => {
+// --- URL PARAMETER LOADING & INITIAL SEARCH ---
+setTimeout(async () => {
     const uiStatus = document.getElementById('ui-main-status');
-    if (uiStatus) {
-        uiStatus.innerText = "Initializing First Attractor...";
-        uiStatus.style.color = "#ffff00";
+    
+    // 1. Check for a URL parameter (e.g., vis.strangeattractor.xyz/?id=my_favorite_01)
+    const urlParams = new URLSearchParams(window.location.search);
+    const loadId = urlParams.get('id'); 
+
+    if (loadId) {
+        // 2. SECURITY: Sanitize the input. 
+        // Allow ONLY alphanumeric characters, hyphens, and underscores. 
+        // This completely prevents directory traversal (../) and external URL injection.
+        const sanitizedId = loadId.replace(/[^a-zA-Z0-9_-]/g, '');
+
+        if (sanitizedId) {
+            if (uiStatus) {
+                uiStatus.innerText = "Downloading Attractor: " + sanitizedId + "...";
+                uiStatus.style.color = "#00ffff";
+            }
+
+            try {
+                // 3. Fetch from a hardcoded relative directory (change 'gallery' if you prefer a different folder name)
+                const response = await fetch(`./gallery/${sanitizedId}.json`);
+                if (!response.ok) throw new Error("File not found on server");
+
+                const d = await response.json();
+                
+                // 4. Apply the data exactly as the "Load JSON" button does
+                currentCoeffs = Object.values(d.coeffs || d).map(Number); 
+                applyState(d); 
+
+                if (uiStatus) {
+                    uiStatus.innerText = "Loaded " + (d.settings ? d.settings.id : sanitizedId); 
+                    uiStatus.style.color = "#00ff00";
+                }
+
+                // 5. Trigger the render worker
+                worker.postMessage({ 
+                    type: 'render', 
+                    coeffs: currentCoeffs, 
+                    physicsSteps: currentPhysicsSteps, 
+                    density: currentDensity, 
+                    genType: currentGenType 
+                });
+
+            } catch (err) {
+                console.error("Failed to load JSON from URL:", err);
+                if (uiStatus) {
+                    uiStatus.innerText = "Failed to load: " + sanitizedId;
+                    uiStatus.style.color = "red";
+                }
+                // Fallback to normal auto-search if the file doesn't exist
+                if (btnMine) btnMine.click(); 
+            }
+        } else {
+             // Parameter was empty or invalid after sanitization, fallback to auto-search
+             if (btnMine) btnMine.click(); 
+        }
+    } else {
+        // No URL parameter found, proceed with normal auto-search on load
+        if (uiStatus) {
+            uiStatus.innerText = "Initializing First Attractor...";
+            uiStatus.style.color = "#ffff00";
+        }
+        if (btnMine) btnMine.click(); 
     }
-    // Simulate a click on the hidden main mine button to kick off the worker
-    if (btnMine) btnMine.click();
-}, 100); // 100ms delay ensures the UI and WebGL context are fully painted and ready
+}, 100);
