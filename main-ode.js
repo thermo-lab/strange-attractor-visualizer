@@ -1681,7 +1681,7 @@ function updatePowerUI() {
         });
     }
 
-    html += `<button id="pm-apply" style="width:100%; padding:12px; background:#0f0; color:#000; font-weight:bold; border:none; margin-top:15px; cursor:pointer;">APPLY & MINE ⛏️</button>`;
+    html += `<button id="pm-apply" style="width:100%; padding:12px; background:#0f0; color:#000; font-weight:bold; border:none; margin-top:15px; cursor:pointer;">APPLY & SEARCH ⛏️</button>`;
     
     powerModal.innerHTML = html;
 
@@ -1759,7 +1759,7 @@ div.appendChild(createSection("GENERATION", `
         <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:5px;">
-        <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ MINE</button>
+        <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ SEARCH</button>
         <button id="ui-btn-mutate" style="flex:1; cursor:pointer; background:#440044; color:#fff; border:1px solid #f0f; padding:10px;">🧬 MUTATE</button>
     </div>
     <button id="ui-btn-power" style="width:100%; background:#222; color:#0f0; border:1px dashed #0f0; padding:5px; margin-bottom:10px; cursor:pointer;">⚡ POWER MODE</button>
