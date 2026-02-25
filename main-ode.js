@@ -723,9 +723,14 @@ const workerCode = `
         let outIdx = 0;
         let maxVel = 0;
 
-        for(let i=0; i<nSteps; i++) {
+for(let i=0; i<nSteps; i++) {
             let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
-            if (Math.abs(p2.x) > 1000 || isNaN(p2.x)) break;
+            
+            // FIX 1: Tighter divergence check on all axes. 150 is plenty for our generators.
+            if (Math.abs(p2.x) > 150 || Math.abs(p2.y) > 150 || Math.abs(p2.z) > 150 || 
+                isNaN(p2.x) || isNaN(p2.y) || isNaN(p2.z)) {
+                break; 
+            }
 
             for(let d=0; d<density; d++) {
                 if (outIdx >= totalPoints) break;
@@ -745,42 +750,51 @@ const workerCode = `
             history.shift(); history.push(stepPhysics());
         }
         
+        // FIX 2: Only calculate math on the actual points generated, ignoring trailing zeros
+        let actualPoints = outIdx;
+        if (actualPoints === 0) return { buffer: new ArrayBuffer(0), metaBuffer: new ArrayBuffer(0) };
+
         if (maxVel > 0) {
-            for(let i=0; i<totalPoints; i++) metaData[i*2] /= maxVel;
+            for(let i=0; i<actualPoints; i++) metaData[i*2] /= maxVel;
         }
         
-        // Auto-Centering & Scaling
+        // Auto-Centering
         let sumX=0, sumY=0, sumZ=0;
-        for(let i=0; i<totalPoints; i++) {
+        for(let i=0; i<actualPoints; i++) {
             sumX += posData[i*3]; sumY += posData[i*3+1]; sumZ += posData[i*3+2];
         }
-        let avgX = sumX/totalPoints, avgY = sumY/totalPoints, avgZ = sumZ/totalPoints;
+        let avgX = sumX/actualPoints, avgY = sumY/actualPoints, avgZ = sumZ/actualPoints;
         
+        // Auto-Scaling (RMS)
         let sumDistSq = 0;
-        for(let i=0; i<totalPoints; i++) {
+        for(let i=0; i<actualPoints; i++) {
             let px = posData[i*3]-avgX; let py = posData[i*3+1]-avgY; let pz = posData[i*3+2]-avgZ;
             posData[i*3] = px; posData[i*3+1] = py; posData[i*3+2] = pz;
             sumDistSq += px*px + py*py + pz*pz;
         }
-        let rms = Math.sqrt(sumDistSq / totalPoints);
+        let rms = Math.sqrt(sumDistSq / actualPoints);
         
         // GRN needs specific zoom (lives in [0,1])
         let scaleTarget = 0.5;
         if (genType === 'grn') scaleTarget = 0.8;
-        if (genType === 'dadras') scaleTarget = 0.35; // Large range
+        if (genType === 'dadras') scaleTarget = 0.35; 
         if (genType === 'thomas') scaleTarget = 0.5;
         if (genType === 'aizawa') scaleTarget = 0.6;
-        if (genType === 'chua') scaleTarget = 0.2; // Chua is tiny
+        if (genType === 'chua') scaleTarget = 0.2; 
         if (genType === 'hindmarsh') scaleTarget = 0.25; 
         if (genType === 'moore') scaleTarget = 0.8; 
         if (genType === 'rikitake') scaleTarget = 2.0;
 
         if (rms > 0) {
             let s = scaleTarget / rms;
-            for(let i=0; i<posData.length; i++) posData[i] *= s;
+            for(let i=0; i<actualPoints * 3; i++) posData[i] *= s;
         }
 
-        return { buffer: posData.buffer, metaBuffer: metaData.buffer };
+        // FIX 3: Slice the arrays before returning so WebGL only draws the good data
+        let finalPos = posData.slice(0, actualPoints * 3);
+        let finalMeta = metaData.slice(0, actualPoints * 2);
+
+        return { buffer: finalPos.buffer, metaBuffer: finalMeta.buffer };
     }
 `;
 
