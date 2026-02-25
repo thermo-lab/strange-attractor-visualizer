@@ -1588,23 +1588,20 @@ toggleBtn.innerText = '⚙️';
 toggleBtn.onclick = (e) => {
     e.stopPropagation(); // Prevent canvas click
     const panel = document.getElementById('colorControls');
-    const quickBtn = document.getElementById('ui-quick-search-btn'); // Target the new button
-    
+
     if (panel.style.display === 'none') {
         panel.style.display = 'block';
-        if(quickBtn) quickBtn.style.display = 'none'; // Hide quick search when panel opens
     } else {
         panel.style.display = 'none';
-        if(quickBtn) quickBtn.style.display = 'flex'; // Show quick search when panel closes
     }
 };
+
 document.body.appendChild(toggleBtn);
 
 // --- ADD THE QUICK SEARCH BUTTON ---
 const quickSearchBtn = document.createElement('button');
 quickSearchBtn.id = 'ui-quick-search-btn';
-// On mobile, the panel is hidden, so show the button. On desktop, panel is open, so hide it.
-quickSearchBtn.style.display = isMobile ? 'flex' : 'none';
+quickSearchBtn.style.display = 'flex'; // Always visible
 quickSearchBtn.innerText = '⛏️ SEARCH!';
 quickSearchBtn.onclick = (e) => {
     e.stopPropagation(); // Prevent canvas interaction
