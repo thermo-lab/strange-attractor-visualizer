@@ -1514,7 +1514,7 @@ style.textContent = `
     }
 
     /* Toggle Button (Gear) - Fixed Bottom Right */
-    #ui-toggle-btn {
+#ui-toggle-btn {
         position: absolute;
         bottom: 20px;
         right: 20px;
@@ -1531,6 +1531,8 @@ style.textContent = `
         justify-content: center;
         user-select: none;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+        box-sizing: border-box;
+        margin: 0;
     }
 
 /* Quick Search Button - Fixed Bottom Right (Next to Gear) */
@@ -1553,6 +1555,8 @@ style.textContent = `
         justify-content: center;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
         transition: background 0.2s, color 0.2s;
+        box-sizing: border-box;
+        margin: 0;
     }
     #ui-quick-search-btn:hover {
         background: #fff;
@@ -1579,6 +1583,8 @@ style.textContent = `
         box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
         border-radius: 50%;
         transition: background 0.2s, transform 0.2s;
+        box-sizing: border-box;
+        margin: 0;
     }
     #ui-quick-snap-btn:hover {
         background: #0f0;
