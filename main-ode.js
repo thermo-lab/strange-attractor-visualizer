@@ -1560,8 +1560,40 @@ style.textContent = `
         border-color: #fff;
     }
 
+/* Quick Snap Button - Floating Above Gear */
+    #ui-quick-snap-btn {
+        position: absolute;
+        bottom: 70px; /* 20px margin + 40px gear + 10px gap */
+        right: 20px;
+        background: #fff;
+        color: #000;
+        border: 1px solid #fff;
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+        cursor: pointer;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+        border-radius: 50%;
+        transition: background 0.2s, transform 0.2s;
+    }
+    #ui-quick-snap-btn:hover {
+        background: #0f0;
+        border-color: #0f0;
+        transform: scale(1.1);
+    }
+
     /* --- MOBILE OVERRIDES --- */
     @media (max-width: 600px) {
+#ui-quick-snap-btn {
+            width: 50px;
+            height: 50px;
+            bottom: 80px; /* 20px margin + 50px gear + 10px gap */
+            right: 20px;
+        }
         #colorControls {
             top: auto;
             bottom: 0;
@@ -1635,6 +1667,44 @@ quickSearchBtn.onclick = (e) => {
     }); 
 };
 document.body.appendChild(quickSearchBtn);
+
+// --- ADD THE QUICK SNAP BUTTON ---
+const quickSnapBtn = document.createElement('button');
+quickSnapBtn.id = 'ui-quick-snap-btn';
+quickSnapBtn.innerHTML = '📸';
+quickSnapBtn.title = 'Quick HD Snapshot (1080p)';
+quickSnapBtn.style.display = 'flex'; // Always visible
+
+quickSnapBtn.onclick = (e) => {
+    e.stopPropagation(); // Prevent canvas interaction
+    if (isExporting || !currentCoeffs) return;
+
+    // 1. Detect orientation
+    const isLandscape = canvas.width > canvas.height;
+    
+    // 2. Backup current panel settings
+    const prevUnit = exportUnit;
+    const prevW = inpW.value;
+    const prevH = inpH.value;
+    const prevDpi = inpDPI.value;
+    
+    // 3. Inject Quick HD settings
+    exportUnit = 'pixels';
+    inpW.value = isLandscape ? 1920 : 1080;
+    inpH.value = isLandscape ? 1080 : 1920;
+    inpDPI.value = 72;
+    
+    // 4. Trigger export
+    startTiledExport('download');
+    
+    // 5. Restore panel settings immediately 
+    // (startTiledExport reads them synchronously, so we can revert right away)
+    exportUnit = prevUnit;
+    inpW.value = prevW;
+    inpH.value = prevH;
+    inpDPI.value = prevDpi;
+};
+document.body.appendChild(quickSnapBtn);
 // -----------------------------------
 
 const div = document.createElement('div');
