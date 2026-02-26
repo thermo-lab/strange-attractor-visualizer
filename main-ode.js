@@ -1634,11 +1634,23 @@ toggleBtn.innerText = '⚙️';
 toggleBtn.onclick = (e) => {
     e.stopPropagation(); // Prevent canvas click
     const panel = document.getElementById('colorControls');
-
+    const quickSearch = document.getElementById('ui-quick-search-btn');
+    const quickSnap = document.getElementById('ui-quick-snap-btn');
+    
     if (panel.style.display === 'none') {
         panel.style.display = 'block';
+        // Hide convenience buttons on mobile to prevent overlap with the bottom sheet
+        if (isMobile) {
+            if (quickSearch) quickSearch.style.display = 'none';
+            if (quickSnap) quickSnap.style.display = 'none';
+        }
     } else {
         panel.style.display = 'none';
+        // Restore convenience buttons
+        if (isMobile) {
+            if (quickSearch) quickSearch.style.display = 'flex';
+            if (quickSnap) quickSnap.style.display = 'flex';
+        }
     }
 };
 
@@ -2746,6 +2758,9 @@ async function startTiledExport(mode = 'download') {
             let bMode = 0;
             if (blendMode === 'ADD') bMode = 1;
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
+
+// FIX: Explicitly disable the crop guide for the export pass
+            gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_show_guide"), 0);
 
             gl.drawArrays(gl.TRIANGLES, 0, 3);
             
