@@ -1697,31 +1697,38 @@ quickSnapBtn.onclick = (e) => {
     e.stopPropagation(); // Prevent canvas interaction
     if (isExporting || !currentCoeffs) return;
 
-    // 1. Detect orientation
-    const isLandscape = canvas.width > canvas.height;
-    
-    // 2. Backup current panel settings
-    const prevUnit = exportUnit;
-    const prevW = inpW.value;
-    const prevH = inpH.value;
-    const prevDpi = inpDPI.value;
-    
-    // 3. Inject Quick HD settings
-    exportUnit = 'pixels';
-    inpW.value = isLandscape ? 1920 : 1080;
-    inpH.value = isLandscape ? 1080 : 1920;
-    inpDPI.value = 72;
-    
-    // 4. Trigger export
-    startTiledExport('download');
-    
-    // 5. Restore panel settings immediately 
-    // (startTiledExport reads them synchronously, so we can revert right away)
-    exportUnit = prevUnit;
-    inpW.value = prevW;
-    inpH.value = prevH;
-    inpDPI.value = prevDpi;
+    const checkGuide = document.getElementById('ui-show-guide');
+
+    if (checkGuide && checkGuide.checked) {
+        // 1. Guide is ON: Respect the exact print settings defined in the panel
+        startTiledExport('download');
+    } else {
+        // 2. Guide is OFF: Do the default 1080p HD viewport snap
+        const isLandscape = canvas.width > canvas.height;
+        
+        // Backup current panel settings
+        const prevUnit = exportUnit;
+        const prevW = inpW.value;
+        const prevH = inpH.value;
+        const prevDpi = inpDPI.value;
+        
+        // Inject Quick HD settings
+        exportUnit = 'pixels';
+        inpW.value = isLandscape ? 1920 : 1080;
+        inpH.value = isLandscape ? 1080 : 1920;
+        inpDPI.value = 72;
+        
+        // Trigger export
+        startTiledExport('download');
+        
+        // Restore panel settings immediately 
+        exportUnit = prevUnit;
+        inpW.value = prevW;
+        inpH.value = prevH;
+        inpDPI.value = prevDpi;
+    }
 };
+
 document.body.appendChild(quickSnapBtn);
 // -----------------------------------
 
