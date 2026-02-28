@@ -642,7 +642,7 @@ function calcD(px, py, pz, res) {
         if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
         if (genType === 'moore') { minL=0.002; minWidth=2.0; minVol=50; }
-        if (genType === 'clifford_flow') { minL=0.0001; minWidth=0.5; minVol=15; }
+        if (genType === 'clifford_flow') { minL=0.0015; minWidth=0.5; minVol=45; }
 
         if (lyapunov < minL) return false;
         
