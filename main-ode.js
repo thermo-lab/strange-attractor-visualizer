@@ -341,10 +341,11 @@ else if (genType === 'moore') {
                 }
                 else if (genType === 'clifford_flow') {
                     coeffs = new Float32Array(4);
-                    coeffs[0] = 1.5 + Math.random() * 0.5; // a
-                    coeffs[1] = -1.5 + Math.random() * 0.5; // b
-                    coeffs[2] = 1.0 + Math.random() * 0.5; // c
-                    coeffs[3] = 0.5 + Math.random() * 0.5; // d
+                    // Widen the search! Classic 2D map values won't guarantee 3D continuous chaos.
+                    coeffs[0] = (Math.random() - 0.5) * 6.0; // a: -3 to 3
+                    coeffs[1] = (Math.random() - 0.5) * 6.0; // b: -3 to 3
+                    coeffs[2] = (Math.random() - 0.5) * 6.0; // c: -3 to 3
+                    coeffs[3] = (Math.random() - 0.5) * 6.0; // d: -3 to 3
                 }
                 else {
                     coeffs = new Float32Array(30);
@@ -594,7 +595,7 @@ function calcD(px, py, pz, res) {
         if(genType === 'thomas') voxRes = 0.2;
         if(genType === 'aizawa') voxRes = 0.1;
         if(genType === 'moore') voxRes = 0.5;
-
+        if(genType === 'clifford_flow') voxRes = 0.1;
         const visited = new Set();
         let steps = 3000;
         
@@ -641,6 +642,7 @@ function calcD(px, py, pz, res) {
         if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
         if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
         if (genType === 'moore') { minL=0.002; minWidth=2.0; minVol=50; }
+        if (genType === 'clifford_flow') { minL=0.0001; minWidth=0.5; minVol=15; }
 
         if (lyapunov < minL) return false;
         
@@ -869,6 +871,7 @@ for(let i=0; i<nSteps; i++) {
         if (genType === 'hindmarsh') scaleTarget = 0.25; 
         if (genType === 'moore') scaleTarget = 0.8; 
         if (genType === 'rikitake') scaleTarget = 2.0;
+        if (genType === 'clifford_flow') scaleTarget = 0.6;
 
         if (rms > 0) {
             let s = scaleTarget / rms;
