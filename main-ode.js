@@ -90,15 +90,15 @@ const GEN_DEFS = {
             { name: "I (Current)", idx: 7, min: 0, max: 10, valMin: 2.9, valMax: 3.4, defMin: 2.9, defMax: 3.4 }
         ]
     },
-    moore: {
-        label: "Moore-Spiegel", isMap: false, dt: 0.0002,
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.8,
-        voxRes: 0.5, minL: 0.002, minVol: 50, minWidth: 2.0,
-        params: [
-            { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
-            { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0, defMin: 80.0, defMax: 120.0 }
-        ]
-    },
+    // moore: {
+    //     label: "Moore-Spiegel", isMap: false, dt: 0.0002,
+    //     startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.8,
+    //     voxRes: 0.5, minL: 0.002, minVol: 50, minWidth: 2.0,
+    //     params: [
+    //         { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
+    //         { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0, defMin: 80.0, defMax: 120.0 }
+    //     ]
+    // },
     dadras: { 
         label: "Dadras", isMap: false, dt: 0.015, 
         startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.35,
@@ -133,7 +133,7 @@ const GEN_DEFS = {
         ] 
     },
     sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 1.0, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, params: [] },
-    grn: { label: "GRN", isMap: false, dt: 0.015, startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.8, voxRes: 0.05, minL: 0.0015, minVol: 60, minWidth: 0.05, params: [] }
+    //grn: { label: "GRN", isMap: false, dt: 0.015, startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.8, voxRes: 0.05, minL: 0.0015, minVol: 60, minWidth: 0.05, params: [] }
 };
 
 // --- GLOBAL STATE VARIABLES ---
