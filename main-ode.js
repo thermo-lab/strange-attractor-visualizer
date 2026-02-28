@@ -324,17 +324,11 @@ const workerCode = `
                     coeffs[5]=4.0; coeffs[6]=-1.6;
                     coeffs[7] = 2.0 + Math.random() * 2.0; 
                 }
-                else if (genType === 'moore') {
-                    coeffs = new Float32Array(2);
-                    coeffs[0] = 5.0 + (Math.random() * 45.0); 
-                    coeffs[1] = 50.0 + (Math.random() * 100.0); 
-                }
 else if (genType === 'moore') {
                     coeffs = new Float32Array(2);
                     coeffs[0] = 5.0 + (Math.random() * 45.0); 
                     coeffs[1] = 50.0 + (Math.random() * 100.0); 
                 }
-                // --- ADD NEW GENERATORS HERE ---
                 else if (genType === 'lorenz') {
                     coeffs = new Float32Array(3);
                     coeffs[0] = 9.0 + Math.random() * 2.0;  // Sigma
@@ -345,19 +339,17 @@ else if (genType === 'moore') {
                     coeffs = new Float32Array(1);
                     coeffs[0] = 1.8 + Math.random() * 0.2; // a
                 }
-else if (genType === 'clifford_flow') {
+                else if (genType === 'clifford_flow') {
                     coeffs = new Float32Array(4);
                     coeffs[0] = 1.5 + Math.random() * 0.5; // a
                     coeffs[1] = -1.5 + Math.random() * 0.5; // b
                     coeffs[2] = 1.0 + Math.random() * 0.5; // c
                     coeffs[3] = 0.5 + Math.random() * 0.5; // d
-                } else {
-                    coeffs = new Float32Array(30); // Poly fallback
+                }
                 else {
                     coeffs = new Float32Array(30);
                     for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
                 }
-            }
             
             let dtOverride = (constraints && constraints.dt) ? constraints.dt : null;
 
