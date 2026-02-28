@@ -350,6 +350,7 @@ else if (genType === 'moore') {
                     coeffs = new Float32Array(30);
                     for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
                 }
+            }
             
             let dtOverride = (constraints && constraints.dt) ? constraints.dt : null;
 
