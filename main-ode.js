@@ -1866,14 +1866,12 @@ div.appendChild(createSection("GENERATION", `
         <option value="clifford_map">Clifford Map (3D Discrete)</option>
         <option value="lorenz">Lorenz</option>
         <option value="halvorsen">Halvorsen</option>
-        <option value="grn">Gene Regulatory Network</option>
         <option value="dadras">Dadras (Complex Butterfly)</option>
         <option value="thomas">Thomas (Cyclic Lattice)</option>
         <option value="aizawa">Aizawa (Sphere Tube)</option>
         <option value="rikitake">Rikitake (Double Spiral)</option>
         <option value="chua">Chua (Double Scroll)</option>
         <option value="hindmarsh">Hindmarsh-Rose (Neuron)</option>
-        <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:5px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ SEARCH</button>
