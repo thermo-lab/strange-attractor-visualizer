@@ -328,7 +328,29 @@ const workerCode = `
                     coeffs = new Float32Array(2);
                     coeffs[0] = 5.0 + (Math.random() * 45.0); 
                     coeffs[1] = 50.0 + (Math.random() * 100.0); 
+                } else if (genType === 'moore') {
+                    coeffs = new Float32Array(2);
+                    coeffs[0] = 5.0 + (Math.random() * 45.0); 
+                    coeffs[1] = 50.0 + (Math.random() * 100.0); 
                 }
+                // --- ADD NEW GENERATORS HERE ---
+                else if (genType === 'lorenz') {
+                    coeffs = new Float32Array(3);
+                    coeffs[0] = 9.0 + Math.random() * 2.0;  // Sigma
+                    coeffs[1] = 27.0 + Math.random() * 2.0; // Rho
+                    coeffs[2] = 2.5 + Math.random() * 0.3;  // Beta
+                }
+                else if (genType === 'halvorsen') {
+                    coeffs = new Float32Array(1);
+                    coeffs[0] = 1.8 + Math.random() * 0.2; // a
+                } else if (genType === 'clifford_flow') {
+                    coeffs = new Float32Array(4);
+                    coeffs[0] = 1.5 + Math.random() * 0.5; // a
+                    coeffs[1] = -1.5 + Math.random() * 0.5; // b
+                    coeffs[2] = 1.0 + Math.random() * 0.5; // c
+                    coeffs[3] = 0.5 + Math.random() * 0.5; // d
+                } else {
+                    coeffs = new Float32Array(30); // Poly fallback
                 else {
                     coeffs = new Float32Array(30);
                     for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
@@ -395,8 +417,10 @@ const workerCode = `
             }
             else if (genType === 'dadras') {
                 child[idx] += (Math.random() - 0.5) * 0.1;
-            }
-            else if (genType === 'thomas') {
+            }else if (genType === 'lorenz') {
+                if (idx === 1) child[idx] += (Math.random() - 0.5) * 1.0; // Rho needs larger steps
+                else child[idx] += (Math.random() - 0.5) * 0.1;
+            } else if (genType === 'thomas') {
                 child[0] += (Math.random() - 0.5) * 0.01;
             }
             else if (genType === 'aizawa') {
@@ -441,6 +465,9 @@ const workerCode = `
         else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
         else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
         else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
+        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
+        else if (genType === 'lorenz') { x = 0.1; y = 0.1; z = 0.1; }
+        else if (genType === 'halvorsen') { x = 1.0; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
@@ -450,6 +477,7 @@ const workerCode = `
         if (genType === 'aizawa') dt = 0.01;
         if (genType === 'moore') dt = 0.0002; 
         if (genType === 'hindmarsh') dt = 0.02;
+        if (genType === 'lorenz' || genType === 'halvorsen') dt = 0.005;
 
         if (dtOverride) dt = dtOverride;
 
@@ -649,6 +677,8 @@ function calcD(px, py, pz, res) {
         else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
         else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
         else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
+        else if (genType === 'lorenz') { x = 0.1; y = 0.1; z = 0.1; }
+        else if (genType === 'halvorsen') { x = 1.0; y = 0.0; z = 0.0; }
         else { x = 0.05; y = 0.05; z = 0.05; }
 
         let dt = 0.015;
@@ -656,6 +686,7 @@ function calcD(px, py, pz, res) {
         if (genType === 'aizawa') dt = 0.01;
         if (genType === 'moore') dt = 0.0002; 
         if (genType === 'hindmarsh') dt = 0.02;
+        if (genType === 'lorenz' || genType === 'halvorsen') dt = 0.005;
 
         if (dtOverride) dt = dtOverride;
 
@@ -783,8 +814,9 @@ function calcD(px, py, pz, res) {
 for(let i=0; i<nSteps; i++) {
             let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
             
-            // FIX 1: Tighter divergence check on all axes. 150 is plenty for our generators.
-            if (Math.abs(p2.x) > 150 || Math.abs(p2.y) > 150 || Math.abs(p2.z) > 150 || 
+// FIX 1: Tighter divergence check on all axes. 
+            // Bumped to 300 so Lorenz Z-axis doesn't falsely trigger divergence.
+            if (Math.abs(p2.x) > 300 || Math.abs(p2.y) > 300 || Math.abs(p2.z) > 300 || 
                 isNaN(p2.x) || isNaN(p2.y) || isNaN(p2.z)) {
                 break; 
             }
