@@ -1943,7 +1943,6 @@ div.appendChild(createSection("GENERATION", `
     <select id="ui-gen-type" style="width:100%; margin-bottom:10px;">
         <option value="poly">Polynomial (Cloud/Wire)</option>
         <option value="sym">Symmetric (CodeParade)</option>
-//<option value="clifford_flow">Clifford Flow (3D)</option>
 <option value="lorenz">Lorenz</option>
 <option value="halvorsen">Halvorsen</option>
         <option value="grn">Gene Regulatory Network</option>
