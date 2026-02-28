@@ -328,7 +328,8 @@ const workerCode = `
                     coeffs = new Float32Array(2);
                     coeffs[0] = 5.0 + (Math.random() * 45.0); 
                     coeffs[1] = 50.0 + (Math.random() * 100.0); 
-                } else if (genType === 'moore') {
+                }
+else if (genType === 'moore') {
                     coeffs = new Float32Array(2);
                     coeffs[0] = 5.0 + (Math.random() * 45.0); 
                     coeffs[1] = 50.0 + (Math.random() * 100.0); 
@@ -343,7 +344,8 @@ const workerCode = `
                 else if (genType === 'halvorsen') {
                     coeffs = new Float32Array(1);
                     coeffs[0] = 1.8 + Math.random() * 0.2; // a
-                } else if (genType === 'clifford_flow') {
+                }
+else if (genType === 'clifford_flow') {
                     coeffs = new Float32Array(4);
                     coeffs[0] = 1.5 + Math.random() * 0.5; // a
                     coeffs[1] = -1.5 + Math.random() * 0.5; // b
@@ -417,10 +419,12 @@ const workerCode = `
             }
             else if (genType === 'dadras') {
                 child[idx] += (Math.random() - 0.5) * 0.1;
-            }else if (genType === 'lorenz') {
+            }
+else if (genType === 'lorenz') {
                 if (idx === 1) child[idx] += (Math.random() - 0.5) * 1.0; // Rho needs larger steps
                 else child[idx] += (Math.random() - 0.5) * 0.1;
-            } else if (genType === 'thomas') {
+            }
+else if (genType === 'thomas') {
                 child[0] += (Math.random() - 0.5) * 0.01;
             }
             else if (genType === 'aizawa') {
@@ -464,7 +468,6 @@ const workerCode = `
         else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
         else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
         else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
         else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
         else if (genType === 'lorenz') { x = 0.1; y = 0.1; z = 0.1; }
         else if (genType === 'halvorsen') { x = 1.0; y = 0.0; z = 0.0; }
