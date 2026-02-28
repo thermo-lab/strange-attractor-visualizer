@@ -6,7 +6,7 @@
    - High-DPI / Retina Display Support
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
-   - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa, Rikitake, Chua, Hindmarsh-Rose, Moore-Spiegel
+   - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa, Rikitake, Chua, Hindmarsh-Rose, Moore-Spiegel, Lorenz, Halvorsen, Clifford Map
    - Power User Mode: Dynamic Search Bounds & Delta-Time control
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
@@ -25,17 +25,22 @@ const isMobile = window.matchMedia("(max-width: 768px)").matches;
 
 // --- GENERATOR DEFINITIONS (METADATA) ---
 const GEN_DEFS = {
-clifford_flow: { 
-        label: "Clifford Flow (3D)", dt: 0.015, 
+    clifford_map: { 
+        label: "Clifford Map (3D Discrete)", 
+        isMap: true, dt: 0.015, // dt unused by maps but kept for safety
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.6,
+        voxRes: 0.1, minL: 0.0015, minVol: 45, minWidth: 0.5,
         params: [
-            { name: "a", idx: 0, min: -3, max: 3, valMin: 1.5, valMax: 2.0, defMin: 1.5, defMax: 2.0 },
-            { name: "b", idx: 1, min: -3, max: 3, valMin: -1.5, valMax: -1.0, defMin: -1.5, defMax: -1.0 },
-            { name: "c", idx: 2, min: -3, max: 3, valMin: 1.0, valMax: 1.5, defMin: 1.0, defMax: 1.5 },
-            { name: "d", idx: 3, min: -3, max: 3, valMin: 0.5, valMax: 1.0, defMin: 0.5, defMax: 1.0 }
+            { name: "a", idx: 0, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
+            { name: "b", idx: 1, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
+            { name: "c", idx: 2, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
+            { name: "d", idx: 3, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 }
         ] 
     },
     lorenz: { 
-        label: "Lorenz", dt: 0.005, 
+        label: "Lorenz", isMap: false, dt: 0.005, 
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 1.0,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "σ (Sigma)", idx: 0, min: 0, max: 20, valMin: 9.0, valMax: 11.0, defMin: 9.0, defMax: 11.0 },
             { name: "ρ (Rho)", idx: 1, min: 0, max: 40, valMin: 27.0, valMax: 29.0, defMin: 27.0, defMax: 29.0 },
@@ -43,24 +48,32 @@ clifford_flow: {
         ] 
     },
     halvorsen: { 
-        label: "Halvorsen", dt: 0.005, 
+        label: "Halvorsen", isMap: false, dt: 0.005, 
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 }
         ] 
     },
     poly: { 
-        label: "Polynomial", dt: 0.05, 
+        label: "Polynomial", isMap: false, dt: 0.05, 
+        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 1.0,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }] 
     },
     rikitake: { 
-        label: "Rikitake", dt: 0.015,
+        label: "Rikitake", isMap: false, dt: 0.015,
+        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 2.0,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "μ (Mu)", idx: 0, min: 0, max: 10, valMin: 1.0, valMax: 6.0, defMin: 1.0, defMax: 6.0 },
             { name: "a (Alpha)", idx: 1, min: 0, max: 20, valMin: 2.0, valMax: 8.0, defMin: 2.0, defMax: 8.0 }
         ]
     },
     chua: {
-        label: "Chua", dt: 0.015,
+        label: "Chua", isMap: false, dt: 0.015,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.2,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "α (Alpha)", idx: 0, min: 0, max: 50, valMin: 9.0, valMax: 18.0, defMin: 9.0, defMax: 18.0 },
             { name: "β (Beta)", idx: 1, min: 0, max: 50, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
@@ -69,21 +82,27 @@ clifford_flow: {
         ]
     },
     hindmarsh: {
-        label: "Hindmarsh-Rose", dt: 0.01,
+        label: "Hindmarsh-Rose", isMap: false, dt: 0.02,
+        startX: -1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.25,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "r (Burst Rate)", idx: 4, min: 0.001, max: 0.05, valMin: 0.001, valMax: 0.01, defMin: 0.001, defMax: 0.01 },
             { name: "I (Current)", idx: 7, min: 0, max: 10, valMin: 2.9, valMax: 3.4, defMin: 2.9, defMax: 3.4 }
         ]
     },
     moore: {
-        label: "Moore-Spiegel", dt: 0.0002,
+        label: "Moore-Spiegel", isMap: false, dt: 0.0002,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.8,
+        voxRes: 0.5, minL: 0.002, minVol: 50, minWidth: 2.0,
         params: [
             { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
             { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0, defMin: 80.0, defMax: 120.0 }
         ]
     },
     dadras: { 
-        label: "Dadras", dt: 0.015, 
+        label: "Dadras", isMap: false, dt: 0.015, 
+        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.35,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "p", idx: 0, min: 1, max: 5, valMin: 2.5, valMax: 3.5, defMin: 2.5, defMax: 3.5 },
             { name: "σ (Sigma)", idx: 1, min: 1, max: 5, valMin: 2.0, valMax: 3.5, defMin: 2.0, defMax: 3.5 },
@@ -93,13 +112,17 @@ clifford_flow: {
         ] 
     },
     thomas: { 
-        label: "Thomas", dt: 0.05, 
+        label: "Thomas", isMap: false, dt: 0.05, 
+        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.5,
+        voxRes: 0.2, minL: 0.001, minVol: 25, minWidth: 0.5,
         params: [
             { name: "b (Dissipation)", idx: 0, min: 0, max: 0.4, valMin: 0.18, valMax: 0.22, defMin: 0.18, defMax: 0.22 }
         ] 
     },
     aizawa: { 
-        label: "Aizawa", dt: 0.01, 
+        label: "Aizawa", isMap: false, dt: 0.01, 
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.6,
+        voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.5,
         params: [
             { name: "ε (Epsilon)", idx: 0, min: 0, max: 2, valMin: 0.90, valMax: 1.0, defMin: 0.90, defMax: 1.0 },
             { name: "α (Alpha)", idx: 1, min: 0, max: 2, valMin: 0.65, valMax: 0.75, defMin: 0.65, defMax: 0.75 },
@@ -109,8 +132,8 @@ clifford_flow: {
             { name: "ζ (Zeta)", idx: 5, min: 0, max: 0.5, valMin: 0.075, valMax: 0.125, defMin: 0.075, defMax: 0.125 }
         ] 
     },
-    sym: { label: "Symmetric", dt: 0.015, params: [] },
-    grn: { label: "GRN", dt: 0.015, params: [] }
+    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 1.0, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, params: [] },
+    grn: { label: "GRN", isMap: false, dt: 0.015, startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.8, voxRes: 0.05, minL: 0.0015, minVol: 60, minWidth: 0.05, params: [] }
 };
 
 // --- GLOBAL STATE VARIABLES ---
@@ -221,9 +244,7 @@ const workerCode = `
 
     function renderExisting(data) {
         const c = new Float32Array(data.coeffs);
-        // data.constraints might pass dtOverride if saved
         const dtOverride = (data.constraints && data.constraints.dt) ? data.constraints.dt : null;
-        
         const result = generateTrace(data.physicsSteps, data.density, data.seedOffset||0, c, data.genType, dtOverride); 
         safePostMessage({
             type: 'found', 
@@ -252,9 +273,11 @@ const workerCode = `
             if (constraints && constraints.params && constraints.params.length > 0) {
                 let size = 30; // Poly default
                 if (genType === 'rikitake' || genType === 'moore') size = 2;
-                if (genType === 'chua') size = 4;
+                if (genType === 'chua' || genType === 'clifford_map') size = 4;
                 if (genType === 'hindmarsh') size = 8;
                 if (genType === 'dadras') size = 5;
+                if (genType === 'lorenz') size = 3;
+                if (genType === 'halvorsen') size = 1;
                 
                 coeffs = new Float32Array(size);
 
@@ -324,7 +347,7 @@ const workerCode = `
                     coeffs[5]=4.0; coeffs[6]=-1.6;
                     coeffs[7] = 2.0 + Math.random() * 2.0; 
                 }
-else if (genType === 'moore') {
+                else if (genType === 'moore') {
                     coeffs = new Float32Array(2);
                     coeffs[0] = 5.0 + (Math.random() * 45.0); 
                     coeffs[1] = 50.0 + (Math.random() * 100.0); 
@@ -339,13 +362,12 @@ else if (genType === 'moore') {
                     coeffs = new Float32Array(1);
                     coeffs[0] = 1.8 + Math.random() * 0.2; // a
                 }
-                else if (genType === 'clifford_flow') {
+                else if (genType === 'clifford_map') {
                     coeffs = new Float32Array(4);
-                    // Widen the search! Classic 2D map values won't guarantee 3D continuous chaos.
-                    coeffs[0] = (Math.random() - 0.5) * 6.0; // a: -3 to 3
-                    coeffs[1] = (Math.random() - 0.5) * 6.0; // b: -3 to 3
-                    coeffs[2] = (Math.random() - 0.5) * 6.0; // c: -3 to 3
-                    coeffs[3] = (Math.random() - 0.5) * 6.0; // d: -3 to 3
+                    coeffs[0] = (Math.random() - 0.5) * 6.0;
+                    coeffs[1] = (Math.random() - 0.5) * 6.0;
+                    coeffs[2] = (Math.random() - 0.5) * 6.0;
+                    coeffs[3] = (Math.random() - 0.5) * 6.0;
                 }
                 else {
                     coeffs = new Float32Array(30);
@@ -414,22 +436,26 @@ else if (genType === 'moore') {
             else if (genType === 'dadras') {
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
-else if (genType === 'lorenz') {
-                if (idx === 1) child[idx] += (Math.random() - 0.5) * 1.0; // Rho needs larger steps
-                else child[idx] += (Math.random() - 0.5) * 0.1;
-            }
-else if (genType === 'thomas') {
+            else if (genType === 'thomas') {
                 child[0] += (Math.random() - 0.5) * 0.01;
             }
             else if (genType === 'aizawa') {
                 child[idx] += (Math.random() - 0.5) * 0.02;
             }
+            else if (genType === 'lorenz') {
+                if (idx === 1) child[idx] += (Math.random() - 0.5) * 1.0; 
+                else child[idx] += (Math.random() - 0.5) * 0.1;
+            }
+            else if (genType === 'halvorsen') {
+                child[idx] += (Math.random() - 0.5) * 0.05;
+            }
+            else if (genType === 'clifford_map') {
+                child[idx] += (Math.random() - 0.5) * 0.1;
+            }
             else {
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
 
-            // Mutation inherits base parameters, so we pass null dtOverride 
-            // (it will assume default dt unless we architect complex inheritance)
             if (checkChaosTail(child, genType, null)) {
                 const result = generateTrace(50000, 1, 0, child, genType, null);
                 safePostMessage({
@@ -449,35 +475,22 @@ else if (genType === 'thomas') {
     }
 
     function checkChaosTail(c, genType, dtOverride) {
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
+        const def = GEN_DEFS[genType];
+        
+        let x = def.startX !== undefined ? def.startX : 0.05;
+        let y = def.startY !== undefined ? def.startY : 0.05;
+        let z = def.startZ !== undefined ? def.startZ : 0.05;
+
+        // Special random starts
+        if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
+        if (genType === 'thomas') { 
             x = (Math.random() - 0.5) * 3.0; 
             y = (Math.random() - 0.5) * 3.0; 
             z = (Math.random() - 0.5) * 3.0; 
         }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
-        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'lorenz') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'halvorsen') { x = 1.0; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
 
         let sx = x + 0.000001, sy = y, sz = z;
-        
-        let dt = 0.015;
-        if (genType === 'poly') dt = 0.05;
-        if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; 
-        if (genType === 'hindmarsh') dt = 0.02;
-        if (genType === 'lorenz' || genType === 'halvorsen') dt = 0.005;
-
-        if (dtOverride) dt = dtOverride;
-
+        let dt = dtOverride ? dtOverride : (def.dt || 0.015);
         let p = c; 
         
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
@@ -489,7 +502,7 @@ else if (genType === 'thomas') {
            c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
         }
 
-function calcD(px, py, pz, res) {
+        function calcD(px, py, pz, res) {
             if (genType === 'sym') {
                 res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
                 res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
@@ -545,12 +558,6 @@ function calcD(px, py, pz, res) {
                 res.dy = p[3]*px + (pz - p[1])*py;
                 res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
             }
-            // --- NEW ATTRACTORS ADDED HERE ---
-            else if (genType === 'clifford_flow') {
-                res.dx = Math.sin(p[0] * py) + p[2] * Math.cos(p[0] * px) - px;
-                res.dy = Math.sin(p[1] * pz) + p[3] * Math.cos(p[1] * py) - py;
-                res.dz = Math.sin(p[2] * px) + p[0] * Math.cos(p[2] * pz) - pz;
-            }
             else if (genType === 'lorenz') {
                 res.dx = p[0] * (py - px);
                 res.dy = px * (p[1] - pz) - py;
@@ -561,7 +568,6 @@ function calcD(px, py, pz, res) {
                 res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
                 res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
             }
-            // ---------------------------------
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
@@ -571,18 +577,26 @@ function calcD(px, py, pz, res) {
 
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        let settleSteps = (genType === 'thomas') ? 5000 : 1500;
-        if(genType === 'moore') settleSteps = 5000;
+        let settleSteps = (genType === 'thomas' || genType === 'moore') ? 5000 : 1500;
 
         for(let i=0; i<settleSteps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
-            if (Math.abs(x) > 100 || isNaN(x)) return false; 
+            if (def.isMap) {
+                if (genType === 'clifford_map') {
+                    let nx = Math.sin(p[0] * y) + p[2] * Math.cos(p[0] * x);
+                    let ny = Math.sin(p[1] * z) + p[3] * Math.cos(p[1] * y);
+                    let nz = Math.sin(p[2] * x) + p[0] * Math.cos(p[2] * z);
+                    x = nx; y = ny; z = nz;
+                }
+            } else {
+                calcD(x, y, z, k1);
+                calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+                calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+                calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+                x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+                y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+                z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            }
+            if (Math.abs(x) > 300 || isNaN(x)) return false; 
         }
         
         sx = x + 0.000001; sy = y; sz = z;
@@ -590,33 +604,42 @@ function calcD(px, py, pz, res) {
         let d0 = 0.000001;
         let minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9, minZ=1e9, maxZ=-1e9;
         
-        let voxRes = 0.5;
-        if(genType === 'grn') voxRes = 0.05;
-        if(genType === 'thomas') voxRes = 0.2;
-        if(genType === 'aizawa') voxRes = 0.1;
-        if(genType === 'moore') voxRes = 0.5;
-        if(genType === 'clifford_flow') voxRes = 0.1;
+        let voxRes = def.voxRes || 0.5;
         const visited = new Set();
         let steps = 3000;
         
         for(let i=0; i<steps; i++) {
-            calcD(x, y, z, k1);
-            calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
-            calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
-            calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
-            x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            if (def.isMap) {
+                if (genType === 'clifford_map') {
+                    let nx = Math.sin(p[0] * y) + p[2] * Math.cos(p[0] * x);
+                    let ny = Math.sin(p[1] * z) + p[3] * Math.cos(p[1] * y);
+                    let nz = Math.sin(p[2] * x) + p[0] * Math.cos(p[2] * z);
+                    x = nx; y = ny; z = nz;
 
-            calcD(sx, sy, sz, k1);
-            calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
-            calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
-            calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
-            sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
-            sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
-            sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+                    let nsx = Math.sin(p[0] * sy) + p[2] * Math.cos(p[0] * sx);
+                    let nsy = Math.sin(p[1] * sz) + p[3] * Math.cos(p[1] * sy);
+                    let nsz = Math.sin(p[2] * sx) + p[0] * Math.cos(p[2] * sz);
+                    sx = nsx; sy = nsy; sz = nsz;
+                }
+            } else {
+                calcD(x, y, z, k1);
+                calcD(x + k1.dx*dt*0.5, y + k1.dy*dt*0.5, z + k1.dz*dt*0.5, k2);
+                calcD(x + k2.dx*dt*0.5, y + k2.dy*dt*0.5, z + k2.dz*dt*0.5, k3);
+                calcD(x + k3.dx*dt, y + k3.dy*dt, z + k3.dz*dt, k4);
+                x += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+                y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+                z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
 
-            if (Math.abs(x) > 100) return false;
+                calcD(sx, sy, sz, k1);
+                calcD(sx + k1.dx*dt*0.5, sy + k1.dy*dt*0.5, sz + k1.dz*dt*0.5, k2);
+                calcD(sx + k2.dx*dt*0.5, sy + k2.dy*dt*0.5, sz + k2.dz*dt*0.5, k3);
+                calcD(sx + k3.dx*dt, sy + k3.dy*dt, sz + k3.dz*dt, k4);
+                sx += (k1.dx + 2*k2.dx + 2*k3.dx + k4.dx)*(dt/6);
+                sy += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
+                sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
+            }
+
+            if (Math.abs(x) > 300) return false;
 
             let dx = x - sx, dy = y - sy, dz = z - sz;
             let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
@@ -634,15 +657,9 @@ function calcD(px, py, pz, res) {
         
         let lyapunov = lyapunovSum / steps;
         
-        let minL = 0.001;
-        let minVol = 25;
-        let minWidth = 1.0;
-
-        if (genType === 'grn') { minL=0.0015; minWidth=0.05; minVol=60; }
-        if (genType === 'thomas') { minL=0.001; minWidth=0.5; minVol=25; } 
-        if (genType === 'aizawa') { minL=0.0001; minWidth=0.5; minVol=30; }
-        if (genType === 'moore') { minL=0.002; minWidth=2.0; minVol=50; }
-        if (genType === 'clifford_flow') { minL=0.0015; minWidth=0.5; minVol=45; }
+        let minL = def.minL || 0.001;
+        let minVol = def.minVol || 25;
+        let minWidth = def.minWidth || 1.0;
 
         if (lyapunov < minL) return false;
         
@@ -661,34 +678,20 @@ function calcD(px, py, pz, res) {
         let metaData = new Float32Array(totalPoints * 2); 
         const rand = mulberry32(seedOffset + 12345);
 
-        let x, y, z;
-        if (genType === 'sym') { x = 0.1; y = 0.0; z = -0.1; } 
-        else if (genType === 'grn') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'dadras') { x = 1.1; y = 2.1; z = -1.5; }
-        else if (genType === 'thomas') { 
+        const def = GEN_DEFS[genType];
+        
+        let x = def.startX !== undefined ? def.startX : 0.05;
+        let y = def.startY !== undefined ? def.startY : 0.05;
+        let z = def.startZ !== undefined ? def.startZ : 0.05;
+
+        // Trace special randomization
+        if (genType === 'thomas') { 
             x = (rand() - 0.5) * 3.0; 
             y = (rand() - 0.5) * 3.0; 
             z = (rand() - 0.5) * 3.0;
         }
-        else if (genType === 'aizawa') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'rikitake') { x = 1.0; y = 0.0; z = 1.0; }
-        else if (genType === 'chua') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'hindmarsh') { x = -1.0; y = 0.0; z = 0.0; }
-        else if (genType === 'moore') { x = 0.1; y = 0.0; z = 0.0; }
-        else if (genType === 'lorenz') { x = 0.1; y = 0.1; z = 0.1; }
-        else if (genType === 'halvorsen') { x = 1.0; y = 0.0; z = 0.0; }
-        else { x = 0.05; y = 0.05; z = 0.05; }
 
-        let dt = 0.015;
-        if (genType === 'poly') dt = 0.05;
-        if (genType === 'aizawa') dt = 0.01;
-        if (genType === 'moore') dt = 0.0002; 
-        if (genType === 'hindmarsh') dt = 0.02;
-        if (genType === 'lorenz' || genType === 'halvorsen') dt = 0.005;
-
-        if (dtOverride) dt = dtOverride;
-
-        // Cache Coeffs
+        let dt = dtOverride ? dtOverride : (def.dt || 0.015);
         let p = c; 
         
         let a0,a1,a2,a3,a4,a5,a6,a7,a8,a9;
@@ -700,7 +703,7 @@ function calcD(px, py, pz, res) {
            c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
         }
 
-function calcD(px, py, pz, res) {
+        function calcD(px, py, pz, res) {
             if (genType === 'sym') {
                 res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
                 res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
@@ -756,12 +759,6 @@ function calcD(px, py, pz, res) {
                 res.dy = p[3]*px + (pz - p[1])*py;
                 res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
             }
-            // --- NEW ATTRACTORS ADDED HERE ---
-            else if (genType === 'clifford_flow') {
-                res.dx = Math.sin(p[0] * py) + p[2] * Math.cos(p[0] * px) - px;
-                res.dy = Math.sin(p[1] * pz) + p[3] * Math.cos(p[1] * py) - py;
-                res.dz = Math.sin(p[2] * px) + p[0] * Math.cos(p[2] * pz) - pz;
-            }
             else if (genType === 'lorenz') {
                 res.dx = p[0] * (py - px);
                 res.dy = px * (p[1] - pz) - py;
@@ -772,7 +769,6 @@ function calcD(px, py, pz, res) {
                 res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
                 res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
             }
-            // ---------------------------------
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
@@ -785,6 +781,20 @@ function calcD(px, py, pz, res) {
         const history = [];
 
         function stepPhysics() {
+            if (def.isMap) {
+                if (genType === 'clifford_map') {
+                    let nx = Math.sin(p[0] * y) + p[2] * Math.cos(p[0] * x);
+                    let ny = Math.sin(p[1] * z) + p[3] * Math.cos(p[1] * y);
+                    let nz = Math.sin(p[2] * x) + p[0] * Math.cos(p[2] * z);
+                    
+                    let dx = nx - x, dy = ny - y, dz = nz - z;
+                    let logVel = Math.log(Math.sqrt(dx*dx + dy*dy + dz*dz) + 1.0);
+                    
+                    x = nx; y = ny; z = nz;
+                    return { x:x, y:y, z:z, vel: logVel, curv: 0 };
+                }
+            }
+
             calcD(x, y, z, k1);
             let speed = Math.sqrt(k1.dx*k1.dx + k1.dy*k1.dy + k1.dz*k1.dz);
             let logVel = Math.log(speed + 1.0);
@@ -809,11 +819,9 @@ function calcD(px, py, pz, res) {
         let outIdx = 0;
         let maxVel = 0;
 
-for(let i=0; i<nSteps; i++) {
+        for(let i=0; i<nSteps; i++) {
             let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
             
-// FIX 1: Tighter divergence check on all axes. 
-            // Bumped to 300 so Lorenz Z-axis doesn't falsely trigger divergence.
             if (Math.abs(p2.x) > 300 || Math.abs(p2.y) > 300 || Math.abs(p2.z) > 300 || 
                 isNaN(p2.x) || isNaN(p2.y) || isNaN(p2.z)) {
                 break; 
@@ -837,7 +845,6 @@ for(let i=0; i<nSteps; i++) {
             history.shift(); history.push(stepPhysics());
         }
         
-        // FIX 2: Only calculate math on the actual points generated, ignoring trailing zeros
         let actualPoints = outIdx;
         if (actualPoints === 0) return { buffer: new ArrayBuffer(0), metaBuffer: new ArrayBuffer(0) };
 
@@ -861,24 +868,13 @@ for(let i=0; i<nSteps; i++) {
         }
         let rms = Math.sqrt(sumDistSq / actualPoints);
         
-        // GRN needs specific zoom (lives in [0,1])
-        let scaleTarget = 0.5;
-        if (genType === 'grn') scaleTarget = 0.8;
-        if (genType === 'dadras') scaleTarget = 0.35; 
-        if (genType === 'thomas') scaleTarget = 0.5;
-        if (genType === 'aizawa') scaleTarget = 0.6;
-        if (genType === 'chua') scaleTarget = 0.2; 
-        if (genType === 'hindmarsh') scaleTarget = 0.25; 
-        if (genType === 'moore') scaleTarget = 0.8; 
-        if (genType === 'rikitake') scaleTarget = 2.0;
-        if (genType === 'clifford_flow') scaleTarget = 0.6;
+        let scaleTarget = def.scaleTarget || 1.0;
 
         if (rms > 0) {
             let s = scaleTarget / rms;
             for(let i=0; i<actualPoints * 3; i++) posData[i] *= s;
         }
 
-        // FIX 3: Slice the arrays before returning so WebGL only draws the good data
         let finalPos = posData.slice(0, actualPoints * 3);
         let finalMeta = metaData.slice(0, actualPoints * 2);
 
@@ -960,7 +956,6 @@ void main() {
     float scaledBlur = rawBlur * scaleFactor;
     scaledBlur = clamp(scaledBlur, 0.0, 400.0 * scaleFactor);
 
-    // FIX 1: Allow baseSize to be sub-pixel (remove the max 1.0 clamp here)
     float baseSize = u_pointSize; 
     float targetSize = baseSize + scaledBlur;
     
@@ -969,16 +964,10 @@ void main() {
     
     float finalSize = targetSize + sizeJitter;
     
-    // WebGL forces this to 1.0 minimum physically
     gl_PointSize = max(1.0, finalSize); 
     
-    // FIX 2: Calculate Area Attenuation (Depth of Field)
-    // Protected against divide-by-zero
     float areaRatio = baseSize / max(0.0001, targetSize); 
 
-    // FIX 3: Sub-Pixel Energy Conservation
-    // If the logical size is 0.5 but we draw 1.0, we have 4x too much area.
-    // We must dim opacity by 0.5*0.5 = 0.25 to maintain correct energy.
     float subPixelComp = 1.0;
     if (finalSize < 1.0) {
         subPixelComp = finalSize * finalSize;
@@ -991,9 +980,6 @@ void main() {
     vec2 pixelSize = 2.0 / u_resolution; 
     gl_Position.xy += vec2(jx, jy) * pixelSize;
 
-    // OPTIMIZATION: Vertex Culling
-    // If the particle is effectively invisible due to extreme depth blur and low global opacity,
-    // throw it outside the clip space (off-screen) so the rasterizer ignores it completely.
     if (v_attenuation * u_opacity < 0.0000001) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0); 
     }
@@ -1008,7 +994,6 @@ in float v_time;
 in vec3 v_pos;
 in float v_attenuation; 
 
-// REMOVED u_sprite uniform
 uniform int u_colorMode;
 uniform vec3 u_colorSeed; 
 uniform float u_opacity;
@@ -1026,20 +1011,10 @@ vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
 }
 
 void main() {
-    // --- PROCEDURAL SPLAT MATH ---
-    // Calculate distance from the center of the point (0.0 to 0.5)
     float dist = length(gl_PointCoord - vec2(0.5));
-    
-    // Circular crop: if outside the circle, discard immediately
     if (dist > 0.5) discard; 
-    
-    // Smooth Gaussian-like falloff using exponential decay
     float shapeAlpha = exp(-dist * dist * 16.0); 
-
-    // Calculate final opacity early
     float finalOpac = u_opacity * v_attenuation * shapeAlpha;
-    
-    // OPTIMIZATION: Discard nearly invisible fragments before doing complex color math
     if (finalOpac < 0.000001) discard;
 
     float val = 0.0;
@@ -1174,35 +1149,26 @@ void main() {
     energy = max(vec3(0.0), energy); 
     energy = pow(energy, vec3(1.0/u_gamma));
 
-    // --- TRANSPARENCY EXPORT LOGIC ---
     if (u_transparent == 1) {
         if (u_invert == 1) {
-             // INK MODE (Normal): Output Black with Alpha = Darkness
              float alpha = dot(energy, vec3(0.299, 0.587, 0.114)); 
              c = vec4(0.0, 0.0, 0.0, clamp(alpha, 0.0, 1.0));
         } else {
-             // GLOW MODE (Add): Fix for "Insubstantial" look
-             // 1. Alpha is determined by the BRIGHTEST color channel
              float maxComp = max(energy.r, max(energy.g, energy.b));
              float alpha = clamp(maxComp, 0.0, 1.0);
-             
-             // 2. Un-multiply RGB so the PNG viewer restores full brightness
              vec3 safeRGB = vec3(0.0);
              if(alpha > 0.0001) {
                  safeRGB = energy / alpha;
              }
-             
              c = vec4(clamp(safeRGB, 0.0, 1.0), alpha);
         }
     } else {
-        // --- STANDARD BACKGROUND COMPOSITE ---
         float aspect = u_res.x / u_res.y;
         vec2 auv = globalUV; auv.x *= aspect;
         vec2 cnt = vec2(0.5*aspect,0.5) + (vec2(cos(u_bg_params.x), sin(u_bg_params.x))*u_bg_params.y);
         float t = smoothstep(0.0, 1.5*u_bg_params.z, distance(auv, cnt));
         vec3 bg = mix(u_bg_a, u_bg_b, t);
         
-        // FIXED: USE GLOBAL COORDS FOR NOISE TO PREVENT TILE SEAMS
         bg += (hash(gl_FragCoord.xy + u_off)-0.5) * (u_noise*0.05);
 
         vec3 finalRGB;
@@ -1213,7 +1179,6 @@ void main() {
             float viewAspect = u_res.x / u_res.y;
             float targetAspect = u_print_aspect;
             
-            // 1. Print is NARROWER than Screen (Vertical Bars / Pillarbox)
             if (targetAspect < viewAspect) {
                 float safeRatio = targetAspect / viewAspect;
                 float margin = (1.0 - safeRatio) * 0.5;
@@ -1226,7 +1191,6 @@ void main() {
                     finalRGB = vec3(0.5, 0.5, 0.5); 
                 }
             } 
-            // 2. Print is WIDER than Screen (Horizontal Bars / Letterbox)
             else if (targetAspect > viewAspect) {
                 float safeRatio = viewAspect / targetAspect;
                 float margin = (1.0 - safeRatio) * 0.5;
@@ -1243,8 +1207,6 @@ void main() {
         
         c = vec4(finalRGB, 1.0);
         float ditherStrength = max(u_noise * 0.2, 0.004); 
-        
-        // FIXED: USE GLOBAL COORDS FOR DITHER TOO
         c.rgb += triangularNoise(gl_FragCoord.xy + u_off) * ditherStrength;
     }
 }`;
@@ -1334,7 +1296,6 @@ function resizeViewportFBO() {
     viewFbo = gl.createFramebuffer();
     viewTex = gl.createTexture();
     
-    // Scale texture to device physical pixels * render scale
     const w = Math.floor(canvas.width * renderScale);
     const h = Math.floor(canvas.height * renderScale);
 
@@ -1457,7 +1418,6 @@ function applyState(data) {
             document.getElementById('ui-export-unit').value = exportUnit;
             document.getElementById('ui-export-transparent').checked = exportTransparent;
             
-            // Fix Labels
             const labelW = document.getElementById('ui-label-w');
             const labelH = document.getElementById('ui-label-h');
             if(exportUnit === 'pixels') {
@@ -1495,10 +1455,7 @@ function applyState(data) {
     sliderVariation.value = currentVariation * 100;
 }
 
-//
 function writePngDpi(blob, dpi) {
-    // 1. Convert DPI to Pixels Per Meter (PNG standard)
-    // 1 inch = 0.0254 meters
     const pixelsPerMeter = Math.round(dpi / 0.0254);
     
     return new Promise(resolve => {
@@ -1507,37 +1464,29 @@ function writePngDpi(blob, dpi) {
             const buffer = e.target.result;
             const view = new DataView(buffer);
             
-            // Check for PNG signature
             if (view.getUint32(0) !== 0x89504E47) {
-                resolve(blob); // Not a PNG, return original
+                resolve(blob); 
                 return;
             }
 
-            // 2. Create the pHYs chunk
-            // Length (4) + Type (4) + Data (9) + CRC (4) = 21 bytes
             const physChunk = new Uint8Array(21);
             const physView = new DataView(physChunk.buffer);
             
-            physView.setUint32(0, 9); // Length of data
-            // Type: "pHYs" (0x70485973)
+            physView.setUint32(0, 9); 
             physChunk.set([112, 72, 89, 115], 4); 
             
-            physView.setUint32(8, pixelsPerMeter); // X axis
-            physView.setUint32(12, pixelsPerMeter); // Y axis
-            physChunk[16] = 1; // Unit specifier: 1 = meter
+            physView.setUint32(8, pixelsPerMeter); 
+            physView.setUint32(12, pixelsPerMeter); 
+            physChunk[16] = 1; 
             
-            // Calculate CRC for Type + Data (bytes 4 to 16)
             const crcInput = physChunk.subarray(4, 17);
             const crc = crc32(crcInput);
             physView.setUint32(17, crc);
 
-            // 3. Construct new Blob: Signature + IHDR + pHYs + rest
-            // IHDR is always the first chunk, 13 bytes data + 12 bytes overhead = 25 bytes
-            // plus 8 byte signature = 33 bytes total for start.
             const newBlob = new Blob([
-                buffer.slice(0, 33), // Sig + IHDR
-                physChunk,           // Insert pHYs
-                buffer.slice(33)     // Rest of file (IDAT, IEND)
+                buffer.slice(0, 33), 
+                physChunk,           
+                buffer.slice(33)     
             ], { type: 'image/png' });
 
             resolve(newBlob);
@@ -1546,7 +1495,6 @@ function writePngDpi(blob, dpi) {
     });
 }
 
-// CRC32 Table-less implementation (compact)
 function crc32(buf) {
     let crc = -1;
     for (let i = 0; i < buf.length; i++) {
@@ -1561,14 +1509,10 @@ function crc32(buf) {
 // ==========================================
 // 4. UI GENERATION (RESPONSIVE)
 // ==========================================
-
-// 1. Inject CSS for Responsive Layout
 const style = document.createElement('style');
 style.textContent = `
-    /* Hide reCAPTCHA Badge but stay compliant */
     .grecaptcha-badge { visibility: hidden; }
 
-    /* --- DESKTOP (DEFAULT) --- */
     #colorControls {
         position: absolute;
         top: 20px;
@@ -1580,13 +1524,12 @@ style.textContent = `
         font-family: monospace;
         overflow-y: auto;
         z-index: 999;
-        display: block; /* Visible by default on desktop */
+        display: block; 
         backdrop-filter: blur(5px);
     }
 
-    /* Section Headers */
     .ui-header {
-        background: rgba(34, 34, 34, 0.85); /* Semi-transparent */
+        background: rgba(34, 34, 34, 0.85); 
         backdrop-filter: blur(5px);
         color: #fff;
         padding: 5px 10px;
@@ -1598,11 +1541,10 @@ style.textContent = `
 
     .ui-content {
         padding: 10px;
-        display: none; /* Collapsed by default */
+        display: none; 
     }
 
-    /* Toggle Button (Gear) - Fixed Bottom Right */
-#ui-toggle-btn {
+    #ui-toggle-btn {
         position: absolute;
         bottom: 20px;
         right: 20px;
@@ -1623,11 +1565,10 @@ style.textContent = `
         margin: 0;
     }
 
-/* Quick Search Button - Fixed Bottom Right (Next to Gear) */
     #ui-quick-search-btn {
         position: absolute;
         bottom: 20px;
-        right: 70px; /* 20px margin + 40px gear + 10px gap */
+        right: 70px; 
         background: #0f0;
         color: #000;
         border: 1px solid #0f0;
@@ -1652,10 +1593,9 @@ style.textContent = `
         border-color: #fff;
     }
 
-/* Quick Snap Button - Floating Above Gear */
     #ui-quick-snap-btn {
         position: absolute;
-        bottom: 70px; /* 20px margin + 40px gear + 10px gap */
+        bottom: 70px; 
         right: 20px;
         background: #fff;
         color: #000;
@@ -1680,12 +1620,11 @@ style.textContent = `
         transform: scale(1.1);
     }
 
-    /* --- MOBILE OVERRIDES --- */
     @media (max-width: 600px) {
-#ui-quick-snap-btn {
+        #ui-quick-snap-btn {
             width: 50px;
             height: 50px;
-            bottom: 80px; /* 20px margin + 50px gear + 10px gap */
+            bottom: 80px; 
             right: 20px;
         }
         #colorControls {
@@ -1694,53 +1633,48 @@ style.textContent = `
             left: 0;
             right: 0;
             width: 100%;
-            max-height: 45vh; /* Bottom sheet */
+            max-height: 45vh; 
             border: none;
             border-top: 2px solid #0f0;
         }
 
-        /* Float the button on mobile too */
         #ui-toggle-btn {
             width: 50px;
             height: 50px;
             border-radius: 50%;
         }
 
-        /* Fat Finger Targets */
         input[type=range], button, select {
             min-height: 35px; 
             margin-bottom: 5px;
         }
 
-#ui-quick-search-btn {
+        #ui-quick-search-btn {
             height: 50px;
-            right: 80px; /* 20px margin + 50px gear + 10px gap */
-            border-radius: 25px; /* Pill shape to match circular gear */
+            right: 80px; 
+            border-radius: 25px; 
         }
     }
 `;
 document.head.appendChild(style);
 
-// 2. Create UI Containers
 const toggleBtn = document.createElement('div');
 toggleBtn.id = 'ui-toggle-btn';
 toggleBtn.innerText = '⚙️';
 toggleBtn.onclick = (e) => {
-    e.stopPropagation(); // Prevent canvas click
+    e.stopPropagation(); 
     const panel = document.getElementById('colorControls');
     const quickSearch = document.getElementById('ui-quick-search-btn');
     const quickSnap = document.getElementById('ui-quick-snap-btn');
     
     if (panel.style.display === 'none') {
         panel.style.display = 'block';
-        // Hide convenience buttons on mobile to prevent overlap with the bottom sheet
         if (isMobile) {
             if (quickSearch) quickSearch.style.display = 'none';
             if (quickSnap) quickSnap.style.display = 'none';
         }
     } else {
         panel.style.display = 'none';
-        // Restore convenience buttons
         if (isMobile) {
             if (quickSearch) quickSearch.style.display = 'flex';
             if (quickSnap) quickSnap.style.display = 'flex';
@@ -1750,22 +1684,19 @@ toggleBtn.onclick = (e) => {
 
 document.body.appendChild(toggleBtn);
 
-// --- ADD THE QUICK SEARCH BUTTON ---
 const quickSearchBtn = document.createElement('button');
 quickSearchBtn.id = 'ui-quick-search-btn';
-quickSearchBtn.style.display = 'flex'; // Always visible
+quickSearchBtn.style.display = 'flex'; 
 quickSearchBtn.innerText = '⛏️ SEARCH!';
 quickSearchBtn.onclick = (e) => {
-    e.stopPropagation(); // Prevent canvas interaction
+    e.stopPropagation(); 
     
-    // Update UI Status (mirroring the main MINE button behavior)
     const uiStatus = document.getElementById('ui-main-status');
     if(uiStatus) {
         uiStatus.innerText = "Scanning..."; 
         uiStatus.style.color = "#ffff00"; 
     }
     
-    // Trigger the worker to mine a new attractor
     worker.postMessage({
         type: 'mine', 
         genType: currentGenType, 
@@ -1774,42 +1705,35 @@ quickSearchBtn.onclick = (e) => {
 };
 document.body.appendChild(quickSearchBtn);
 
-// --- ADD THE QUICK SNAP BUTTON ---
 const quickSnapBtn = document.createElement('button');
 quickSnapBtn.id = 'ui-quick-snap-btn';
 quickSnapBtn.innerHTML = '📸';
 quickSnapBtn.title = 'Quick HD Snapshot (1080p)';
-quickSnapBtn.style.display = 'flex'; // Always visible
+quickSnapBtn.style.display = 'flex'; 
 
 quickSnapBtn.onclick = (e) => {
-    e.stopPropagation(); // Prevent canvas interaction
+    e.stopPropagation(); 
     if (isExporting || !currentCoeffs) return;
 
     const checkGuide = document.getElementById('ui-show-guide');
 
     if (checkGuide && checkGuide.checked) {
-        // 1. Guide is ON: Respect the exact print settings defined in the panel
         startTiledExport('download');
     } else {
-        // 2. Guide is OFF: Do the default 1080p HD viewport snap
         const isLandscape = canvas.width > canvas.height;
         
-        // Backup current panel settings
         const prevUnit = exportUnit;
         const prevW = inpW.value;
         const prevH = inpH.value;
         const prevDpi = inpDPI.value;
         
-        // Inject Quick HD settings
         exportUnit = 'pixels';
         inpW.value = isLandscape ? 1920 : 1080;
         inpH.value = isLandscape ? 1080 : 1920;
         inpDPI.value = 72;
         
-        // Trigger export
         startTiledExport('download');
         
-        // Restore panel settings immediately 
         exportUnit = prevUnit;
         inpW.value = prevW;
         inpH.value = prevH;
@@ -1818,14 +1742,11 @@ quickSnapBtn.onclick = (e) => {
 };
 
 document.body.appendChild(quickSnapBtn);
-// -----------------------------------
 
 const div = document.createElement('div');
 div.id = 'colorControls';
-// On mobile, maybe start hidden so they see the art first?
 if (isMobile) div.style.display = 'none'; 
 
-// --- POWER MODE MODAL ---
 const powerModal = document.createElement('div');
 powerModal.id = 'power-modal';
 powerModal.style.cssText = `
@@ -1860,7 +1781,7 @@ function updatePowerUI() {
         <input type="number" id="pm-dt" value="${defs.dt}" step="0.0001" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
     </div>`;
 
-    if (defs.params.length === 0) {
+    if (!defs.params || defs.params.length === 0) {
         html += `<div style="color:#666; padding:10px; border:1px dashed #444;">No configurable parameters for this generator yet.</div>`;
     } else {
         defs.params.forEach((p, i) => {
@@ -1879,31 +1800,31 @@ function updatePowerUI() {
     
     powerModal.innerHTML = html;
 
-    // Reset Handler
     document.getElementById('pm-reset').onclick = () => {
         defs.dt = (type === 'moore') ? 0.0002 : (type === 'poly' || type === 'thomas' ? 0.05 : 0.015);
-        defs.params.forEach(p => {
-            p.valMin = p.defMin;
-            p.valMax = p.defMax;
-        });
-        updatePowerUI(); // Refresh UI
+        if(defs.params) {
+            defs.params.forEach(p => {
+                p.valMin = p.defMin;
+                p.valMax = p.defMax;
+            });
+        }
+        updatePowerUI(); 
     };
 
-    // Apply Handler
     document.getElementById('pm-apply').onclick = () => {
-        // 1. Update Persistent State
         defs.dt = parseFloat(document.getElementById('pm-dt').value);
-        defs.params.forEach((p, i) => {
-            p.valMin = parseFloat(document.getElementById(`pm-min-${i}`).value);
-            p.valMax = parseFloat(document.getElementById(`pm-max-${i}`).value);
-        });
-
-        // 2. Build Constraints object for Worker
-        const newParams = defs.params.map(p => ({
-            idx: p.idx,
-            valMin: p.valMin,
-            valMax: p.valMax
-        }));
+        let newParams = [];
+        if(defs.params) {
+            defs.params.forEach((p, i) => {
+                p.valMin = parseFloat(document.getElementById(`pm-min-${i}`).value);
+                p.valMax = parseFloat(document.getElementById(`pm-max-${i}`).value);
+            });
+            newParams = defs.params.map(p => ({
+                idx: p.idx,
+                valMin: p.valMin,
+                valMax: p.valMax
+            }));
+        }
 
         currentConstraints = { dt: defs.dt, params: newParams };
         powerModal.style.display = 'none';
@@ -1924,7 +1845,6 @@ function createSection(title, contentHTML) {
     content.className = 'ui-content';
     content.innerHTML = contentHTML;
     
-    // FIX: Explicitly set display state so toggle works on first click
     content.style.display = 'none'; 
 
     header.onclick = () => {
@@ -1943,8 +1863,9 @@ div.appendChild(createSection("GENERATION", `
     <select id="ui-gen-type" style="width:100%; margin-bottom:10px;">
         <option value="poly">Polynomial (Cloud/Wire)</option>
         <option value="sym">Symmetric (CodeParade)</option>
-<option value="lorenz">Lorenz</option>
-<option value="halvorsen">Halvorsen</option>
+        <option value="clifford_map">Clifford Map (3D Discrete)</option>
+        <option value="lorenz">Lorenz</option>
+        <option value="halvorsen">Halvorsen</option>
         <option value="grn">Gene Regulatory Network</option>
         <option value="dadras">Dadras (Complex Butterfly)</option>
         <option value="thomas">Thomas (Cyclic Lattice)</option>
@@ -2132,13 +2053,11 @@ const inpPasses = document.getElementById('ui-print-passes');
 selectBlend.value = blendMode; 
 selectColor.value = colorMode;
 
-// --- EVENT HANDLERS ---
 window.onerror = function(msg, url, line) {
     uiError.innerText = `JS Error: ${msg} (Line ${line})`;
     return false;
 };
 
-// Unit & Transparent Toggle Logic
 const selectExportUnit = document.getElementById('ui-export-unit');
 const checkTransparent = document.getElementById('ui-export-transparent');
 const labelW = document.getElementById('ui-label-w');
@@ -2176,7 +2095,7 @@ checkTransparent.onchange = (e) => { exportTransparent = e.target.checked; };
 
 selectGenType.onchange = (e) => { 
     currentGenType = e.target.value;
-    currentConstraints = null; // Reset constraints on type switch
+    currentConstraints = null; 
 };
 
 inputBg1.oninput = (e) => { bgA = hexToRgb(e.target.value); };
@@ -2233,7 +2152,6 @@ sliderSmooth.oninput = (e) => { currentNoise = parseInt(e.target.value) / 200.0;
 btnSnap.onclick = () => { startTiledExport('download'); };
 btnOrder.onclick = () => { startTiledExport('pod'); };
 
-// Bind Power Mode
 document.getElementById('ui-btn-power').onclick = () => {
     updatePowerUI();
     powerModal.style.display = 'block';
@@ -2279,7 +2197,6 @@ fileInput.onchange = (e) => {
     if(e.target.files[0]) r.readAsText(e.target.files[0]); 
 };
 
-
 canvas.oncontextmenu = (e) => e.preventDefault();
 
 function applyTrackballRotation(dx, dy) {
@@ -2298,9 +2215,6 @@ function applyRoll(angleDelta) {
     currentQuat = qNormalize(currentQuat);
 }
 
-// ==========================================
-// CORRECTED EVENT LISTENERS FOR HIGH-DPI
-// ==========================================
 function getRelativeTouchPos(touch, element) {
     const rect = element.getBoundingClientRect();
     return {
@@ -2461,8 +2375,15 @@ canvas.onwheel = (e) => {
 // ==========================================
 // 5. EXPORT & WORKER INITIALIZATION (FINAL)
 // ==========================================
-const blob = new Blob([workerCode], { type: 'application/javascript' });
-worker = new Worker(URL.createObjectURL(blob)); 
+
+// INJECT GEN_DEFS INTO THE WORKER!
+const fullWorkerString = `
+    const GEN_DEFS = ${JSON.stringify(GEN_DEFS)};
+    ${workerCode}
+`;
+
+const blob = new Blob([fullWorkerString], { type: 'application/javascript' });
+let worker = new Worker(URL.createObjectURL(blob)); 
 
 worker.onerror = function(e) {
     uiStatus.innerText = "Worker Error: " + e.message;
@@ -2490,8 +2411,6 @@ worker.onmessage = (e) => {
             return;
         }
 
-        // FIXED: Only update attempts when finding NEW parameters (mine/mutate)
-        // This prevents the 'render' pass from overwriting the success message.
         if (e.data.source === 'mine' || e.data.source === 'mutate') {
             uiStatus.innerText = `FOUND! (${e.data.attempts} attempts)`;
             uiStatus.style.color = "#00ff00";
@@ -2510,7 +2429,6 @@ worker.onmessage = (e) => {
                 physicsSteps: currentPhysicsSteps, 
                 density: currentDensity, 
                 genType: currentGenType,
-                // Pass constraints back if they exist, so the UI state remains consistent if we save
                 constraints: e.data.constraints 
             });
         }
@@ -2574,7 +2492,6 @@ async function startPrintCheckout(blob) {
     actionContainer.style.borderTop = "1px solid #555";
     actionContainer.style.paddingTop = "10px";
     
-    // Match the side padding of the other UI elements
     actionContainer.style.margin = "0 10px 10px 10px"; 
 
     const inchesW = parseFloat(inpW.value);
@@ -2651,14 +2568,9 @@ async function startPrintCheckout(blob) {
 }
 
 function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jitter, overridePanX, overridePanY, overrideZoom) {
-    //gl.activeTexture(gl.TEXTURE0);
-    //gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
-    //gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
-
     const rotMatrix = qToMatrix(currentQuat);
     gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
     
-    // FIX: Allow overrides for PanX, PanY, and Zoom for accurate letterbox framing
     const usePanX = (overridePanX !== undefined) ? overridePanX : camPanX;
     const usePanY = (overridePanY !== undefined) ? overridePanY : camPanY;
     const useZoom = (overrideZoom !== undefined) ? overrideZoom : camZoom;
@@ -2727,7 +2639,6 @@ async function startTiledExport(mode = 'download') {
     const ctx = masterCanvas.getContext('2d');
     
     const TILE_SIZE = 2048; 
-    // Increased padding to handle large aperture/blur without clipping
     const PADDING = 512; 
     const cols = Math.ceil(totalW / TILE_SIZE);
     const rows = Math.ceil(totalH / TILE_SIZE);
@@ -2761,15 +2672,11 @@ async function startTiledExport(mode = 'download') {
     const screenAspect = canvas.width / canvas.height;
     const printAspect = totalW / totalH;
     
-    // FIX: Calculate precise framing adjustments for Letterbox vs Pillarbox
     let exportZoom = camZoom;
     let exportPanX = camPanX;
     let exportPanY = camPanY;
 
     if (printAspect > screenAspect) {
-        // Letterbox mode: Print is relatively wider. Because the shader locks height, 
-        // we must multiply the zoom and pan to physically scale the geometry up 
-        // so the top and bottom get chopped off exactly as previewed.
         const framingRatio = printAspect / screenAspect;
         exportZoom *= framingRatio;
         exportPanX *= framingRatio;
@@ -2811,10 +2718,6 @@ async function startTiledExport(mode = 'download') {
        
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.ONE, gl.ONE); 
-
-            //gl.activeTexture(gl.TEXTURE0);
-            //gl.bindTexture(gl.TEXTURE_2D, gaussianTex);
-            //gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
           
             for (let p = 0; p < passes; p++) {
                 uiExport.innerText = `Tile ${y*cols + x + 1}/${rows*cols} - Pass ${p+1}/${passes}`;
@@ -2831,7 +2734,6 @@ async function startTiledExport(mode = 'download') {
                     });
                 });
                 
-                // FIX: Pass the compensated Zoom and Pan variables
                 renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, exportPanX, exportPanY, exportZoom);
             }
             
@@ -2861,8 +2763,6 @@ async function startTiledExport(mode = 'download') {
             let bMode = 0;
             if (blendMode === 'ADD') bMode = 1;
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
-
-// FIX: Explicitly disable the crop guide for the export pass
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_show_guide"), 0);
 
             gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -2894,9 +2794,7 @@ async function startTiledExport(mode = 'download') {
     gl.deleteTexture(tex);
     gl.deleteTexture(resolveTex);
     
-    // FIX: Inject DPI metadata before Saving or Uploading
     masterCanvas.toBlob(async (rawBlob) => {
-        // Inject the correct DPI (pHYs chunk)
         const finalBlob = await writePngDpi(rawBlob, dpi);
 
         if (mode === 'download') {
@@ -2906,7 +2804,6 @@ async function startTiledExport(mode = 'download') {
             a.href = url; a.download = `attractor_${exportID}_${inchesW}x${inchesH}in_${dpi}dpi.png`;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
 
-            // FIX: Only download JSON if the user explicitly requested it
             const checkJson = document.getElementById('ui-export-json');
             if (checkJson && checkJson.checked) {
                 const data = { coeffs: Array.from(currentCoeffs), settings: meta };
@@ -2921,7 +2818,6 @@ async function startTiledExport(mode = 'download') {
 
         } else if (mode === 'pod') {
             uiExport.innerText = "Preparing Upload...";
-            // Upload the blob with the correct metadata
             startPrintCheckout(finalBlob); 
         }
     }, 'image/png');
@@ -2958,10 +2854,6 @@ function renderFrame() {
         gl.useProgram(particleProgram);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE);
-        
-        //gl.activeTexture(gl.TEXTURE0);
-        //gl.bindTexture(gl.TEXTURE_2D, gaussianTex); 
-        //gl.uniform1i(gl.getUniformLocation(particleProgram, "u_sprite"), 0);
         
         const rotMatrix = qToMatrix(currentQuat);
         gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
@@ -3025,7 +2917,7 @@ function renderFrame() {
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_invert"), isInverted?1:0);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_black"), incBlack?1:0);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_white"), incWhite?1:0);
-        gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_transparent"), 0); // Viewport always opaque
+        gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_transparent"), 0); 
 
         let bMode = 0;
         if (blendMode === 'ADD') bMode = 1;
@@ -3047,7 +2939,6 @@ function renderFrame() {
 
 function loop() {
     if (!isExporting) { 
-        // --- HIGH DPI FIX ---
         const dpr = window.devicePixelRatio || 1;
         const displayWidth  = Math.floor(canvas.clientWidth * dpr);
         const displayHeight = Math.floor(canvas.clientHeight * dpr);
@@ -3063,18 +2954,12 @@ function loop() {
 }
 requestAnimationFrame(loop);
 
-// --- URL PARAMETER LOADING & INITIAL SEARCH ---
 setTimeout(async () => {
     const uiStatus = document.getElementById('ui-main-status');
-    
-    // 1. Check for a URL parameter (e.g., vis.strangeattractor.xyz/?id=my_favorite_01)
     const urlParams = new URLSearchParams(window.location.search);
     const loadId = urlParams.get('id'); 
 
     if (loadId) {
-        // 2. SECURITY: Sanitize the input. 
-        // Allow ONLY alphanumeric characters, hyphens, and underscores. 
-        // This completely prevents directory traversal (../) and external URL injection.
         const sanitizedId = loadId.replace(/[^a-zA-Z0-9_-]/g, '');
 
         if (sanitizedId) {
@@ -3084,13 +2969,11 @@ setTimeout(async () => {
             }
 
             try {
-                // 3. Fetch from a hardcoded relative directory (change 'gallery' if you prefer a different folder name)
                 const response = await fetch(`./gallery/${sanitizedId}.json`);
                 if (!response.ok) throw new Error("File not found on server");
 
                 const d = await response.json();
                 
-                // 4. Apply the data exactly as the "Load JSON" button does
                 currentCoeffs = Object.values(d.coeffs || d).map(Number); 
                 applyState(d); 
 
@@ -3099,7 +2982,6 @@ setTimeout(async () => {
                     uiStatus.style.color = "#00ff00";
                 }
 
-                // 5. Trigger the render worker
                 worker.postMessage({ 
                     type: 'render', 
                     coeffs: currentCoeffs, 
@@ -3114,15 +2996,12 @@ setTimeout(async () => {
                     uiStatus.innerText = "Failed to load: " + sanitizedId;
                     uiStatus.style.color = "red";
                 }
-                // Fallback to normal auto-search if the file doesn't exist
                 if (btnMine) btnMine.click(); 
             }
         } else {
-             // Parameter was empty or invalid after sanitization, fallback to auto-search
              if (btnMine) btnMine.click(); 
         }
     } else {
-        // No URL parameter found, proceed with normal auto-search on load
         if (uiStatus) {
             uiStatus.innerText = "Initializing First Attractor...";
             uiStatus.style.color = "#ffff00";
