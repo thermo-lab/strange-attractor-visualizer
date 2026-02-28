@@ -25,6 +25,29 @@ const isMobile = window.matchMedia("(max-width: 768px)").matches;
 
 // --- GENERATOR DEFINITIONS (METADATA) ---
 const GEN_DEFS = {
+clifford_flow: { 
+        label: "Clifford Flow (3D)", dt: 0.015, 
+        params: [
+            { name: "a", idx: 0, min: -3, max: 3, valMin: 1.5, valMax: 2.0, defMin: 1.5, defMax: 2.0 },
+            { name: "b", idx: 1, min: -3, max: 3, valMin: -1.5, valMax: -1.0, defMin: -1.5, defMax: -1.0 },
+            { name: "c", idx: 2, min: -3, max: 3, valMin: 1.0, valMax: 1.5, defMin: 1.0, defMax: 1.5 },
+            { name: "d", idx: 3, min: -3, max: 3, valMin: 0.5, valMax: 1.0, defMin: 0.5, defMax: 1.0 }
+        ] 
+    },
+    lorenz: { 
+        label: "Lorenz", dt: 0.005, 
+        params: [
+            { name: "σ (Sigma)", idx: 0, min: 0, max: 20, valMin: 9.0, valMax: 11.0, defMin: 9.0, defMax: 11.0 },
+            { name: "ρ (Rho)", idx: 1, min: 0, max: 40, valMin: 27.0, valMax: 29.0, defMin: 27.0, defMax: 29.0 },
+            { name: "β (Beta)", idx: 2, min: 0, max: 5, valMin: 2.5, valMax: 2.8, defMin: 2.5, defMax: 2.8 }
+        ] 
+    },
+    halvorsen: { 
+        label: "Halvorsen", dt: 0.005, 
+        params: [
+            { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 }
+        ] 
+    },
     poly: { 
         label: "Polynomial", dt: 0.05, 
         params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }] 
@@ -441,7 +464,7 @@ const workerCode = `
            c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
         }
 
-        function calcD(px, py, pz, res) {
+function calcD(px, py, pz, res) {
             if (genType === 'sym') {
                 res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
                 res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
@@ -497,13 +520,30 @@ const workerCode = `
                 res.dy = p[3]*px + (pz - p[1])*py;
                 res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
             }
+            // --- NEW ATTRACTORS ADDED HERE ---
+            else if (genType === 'clifford_flow') {
+                res.dx = Math.sin(p[0] * py) + p[2] * Math.cos(p[0] * px) - px;
+                res.dy = Math.sin(p[1] * pz) + p[3] * Math.cos(p[1] * py) - py;
+                res.dz = Math.sin(p[2] * px) + p[0] * Math.cos(p[2] * pz) - pz;
+            }
+            else if (genType === 'lorenz') {
+                res.dx = p[0] * (py - px);
+                res.dy = px * (p[1] - pz) - py;
+                res.dz = px * py - p[2] * pz;
+            }
+            else if (genType === 'halvorsen') {
+                res.dx = -p[0] * px - 4.0 * py - 4.0 * pz - py * py;
+                res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
+                res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
+            }
+            // ---------------------------------
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
                 res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
             }
         }
-        
+
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
         let settleSteps = (genType === 'thomas') ? 5000 : 1500;
@@ -631,7 +671,7 @@ const workerCode = `
            c0=c[20]; c1=c[21]; c2=c[22]; c3=c[23]; c4=c[24]; c5=c[25]; c6=c[26]; c7=c[27]; c8=c[28]; c9=c[29];
         }
 
-        function calcD(px, py, pz, res) {
+function calcD(px, py, pz, res) {
             if (genType === 'sym') {
                 res.dx = p[0] + p[1]*px + p[2]*py + p[3]*pz + p[4]*px*px + p[5]*py*py + p[6]*pz*pz + p[7]*px*py + p[8]*px*pz + p[9]*py*pz;
                 res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
@@ -687,6 +727,23 @@ const workerCode = `
                 res.dy = p[3]*px + (pz - p[1])*py;
                 res.dz = p[2] + p[0]*pz - (pz*pz*pz)/3.0 - (x2+y2)*(1.0 + p[4]*pz) + p[5]*pz*px*px*px;
             }
+            // --- NEW ATTRACTORS ADDED HERE ---
+            else if (genType === 'clifford_flow') {
+                res.dx = Math.sin(p[0] * py) + p[2] * Math.cos(p[0] * px) - px;
+                res.dy = Math.sin(p[1] * pz) + p[3] * Math.cos(p[1] * py) - py;
+                res.dz = Math.sin(p[2] * px) + p[0] * Math.cos(p[2] * pz) - pz;
+            }
+            else if (genType === 'lorenz') {
+                res.dx = p[0] * (py - px);
+                res.dy = px * (p[1] - pz) - py;
+                res.dz = px * py - p[2] * pz;
+            }
+            else if (genType === 'halvorsen') {
+                res.dx = -p[0] * px - 4.0 * py - 4.0 * pz - py * py;
+                res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
+                res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
+            }
+            // ---------------------------------
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
                 res.dy = b0 + b1*px + b2*py + b3*pz + b4*px*px + b5*py*py + b6*pz*pz + b7*px*py + b8*px*pz + b9*py*pz;
@@ -1855,6 +1912,9 @@ div.appendChild(createSection("GENERATION", `
     <select id="ui-gen-type" style="width:100%; margin-bottom:10px;">
         <option value="poly">Polynomial (Cloud/Wire)</option>
         <option value="sym">Symmetric (CodeParade)</option>
+<option value="clifford_flow">Clifford Flow (3D)</option>
+<option value="lorenz">Lorenz</option>
+<option value="halvorsen">Halvorsen</option>
         <option value="grn">Gene Regulatory Network</option>
         <option value="dadras">Dadras (Complex Butterfly)</option>
         <option value="thomas">Thomas (Cyclic Lattice)</option>
