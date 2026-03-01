@@ -272,7 +272,7 @@ const workerCode = `
         return (Math.floor(Math.random() * 25) - 12) / 10.0;
     }
 
-    function mine(genType, constraints) {
+function mine(genType, constraints) {
         let attempts = 0;
         let lastReport = Date.now();
         
@@ -284,7 +284,7 @@ const workerCode = `
             if (constraints && constraints.params && constraints.params.length > 0) {
                 let size = 30; // Poly default
                 if (genType === 'rikitake' || genType === 'moore') size = 2;
-                if (genType === 'chua' || genType === 'clifford_map') size = 4;
+                if (genType === 'chua' || genType === 'clifford_map' || genType === 'halvorsen_gen') size = 4;
                 if (genType === 'hindmarsh') size = 8;
                 if (genType === 'dadras') size = 5;
                 if (genType === 'lorenz') size = 3;
@@ -365,17 +365,21 @@ const workerCode = `
                 }
                 else if (genType === 'lorenz') {
                     coeffs = new Float32Array(3);
-                    coeffs[0] = 9.0 + Math.random() * 2.0;  // Sigma
-                    coeffs[1] = 27.0 + Math.random() * 2.0; // Rho
-                    coeffs[2] = 2.5 + Math.random() * 0.3;  // Beta
+                    coeffs[0] = 9.0 + Math.random() * 2.0;  
+                    coeffs[1] = 27.0 + Math.random() * 2.0; 
+                    coeffs[2] = 2.5 + Math.random() * 0.3;  
                 }
-else if (genType === 'halvorsen') {
-                child[idx] += (Math.random() - 0.5) * 0.05;
-            }
-            // --- ADD GENERALIZED HALVORSEN ---
-            else if (genType === 'halvorsen_gen') {
-                child[idx] += (Math.random() - 0.5) * 0.08;
-            }
+                else if (genType === 'halvorsen') {
+                    coeffs = new Float32Array(1);
+                    coeffs[0] = 1.8 + Math.random() * 0.2; 
+                }
+                else if (genType === 'halvorsen_gen') {
+                    coeffs = new Float32Array(4);
+                    coeffs[0] = 1.8 + Math.random() * 0.4; // a
+                    coeffs[1] = 3.0 + Math.random() * 2.0; // b
+                    coeffs[2] = 3.0 + Math.random() * 2.0; // c
+                    coeffs[3] = 0.5 + Math.random() * 1.0; // d
+                }
                 else if (genType === 'clifford_map') {
                     coeffs = new Float32Array(4);
                     coeffs[0] = (Math.random() - 0.5) * 6.0;
@@ -398,7 +402,7 @@ else if (genType === 'halvorsen') {
                     source: 'mine', 
                     coeffs: coeffs, 
                     genType: genType,
-                    constraints: constraints, // Pass back so we can save/reload state
+                    constraints: constraints, 
                     density: 1, 
                     buffer: result.buffer, 
                     metaBuffer: result.metaBuffer, 
@@ -460,10 +464,9 @@ else if (genType === 'halvorsen') {
                 if (idx === 1) child[idx] += (Math.random() - 0.5) * 1.0; 
                 else child[idx] += (Math.random() - 0.5) * 0.1;
             }
-else if (genType === 'halvorsen') {
+            else if (genType === 'halvorsen') {
                 child[idx] += (Math.random() - 0.5) * 0.05;
             }
-            // --- ADD GENERALIZED HALVORSEN ---
             else if (genType === 'halvorsen_gen') {
                 child[idx] += (Math.random() - 0.5) * 0.08;
             }
