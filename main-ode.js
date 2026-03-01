@@ -6,7 +6,7 @@
    - High-DPI / Retina Display Support
    - 16-Bit Float Integration
    - Auto-Matching JSON/PNG Export
-   - Multi-Engine: Poly, Symmetric, GRN, Dadras, Thomas, Aizawa, Rikitake, Chua, Hindmarsh-Rose, Moore-Spiegel, Lorenz, Halvorsen, Clifford Map
+   - Multi-Engine: Poly, Symmetric, Dadras, Thomas, Aizawa, Rikitake, Chua, Moore-Spiegel, Lorenz, Halvorsen, Halvorsen (Gen), Clifford Map
    - Power User Mode: Dynamic Search Bounds & Delta-Time control
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
@@ -20,16 +20,30 @@ const MAX_ALLOCATION = 50000000;
 const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
 const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; 
 
+// --- FORCE SECURE CONTEXT (MIXED CONTENT FIX FOR PEECHO) ---
+// Uncomment this before pushing to live/GitHub Pages. 
+// Leave commented for local MAMP Pro testing to avoid SSL blocking.
+/*
+if (!document.querySelector('meta[http-equiv="Content-Security-Policy"]')) {
+    const metaCSP = document.createElement('meta');
+    metaCSP.setAttribute('http-equiv', 'Content-Security-Policy');
+    metaCSP.setAttribute('content', 'upgrade-insecure-requests');
+    document.head.appendChild(metaCSP);
+}
+*/
+
 // --- DETECT MOBILE ---
 const isMobile = window.matchMedia("(max-width: 768px)").matches;
 
 // --- GENERATOR DEFINITIONS (METADATA) ---
+// This acts as the single source of truth for the entire engine.
 const GEN_DEFS = {
     clifford_map: { 
         label: "Clifford Map (3D Discrete)", 
-        isMap: true, dt: 0.015, // dt unused by maps but kept for safety
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.1,
+        isMap: true, dt: 0.015,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.6,
         voxRes: 0.1, minL: 0.0015, minVol: 45, minWidth: 0.5,
+        boundsLimit: 300,
         params: [
             { name: "a", idx: 0, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
             { name: "b", idx: 1, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
@@ -39,8 +53,9 @@ const GEN_DEFS = {
     },
     lorenz: { 
         label: "Lorenz", isMap: false, dt: 0.005, 
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.1,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        boundsLimit: 300,
         params: [
             { name: "σ (Sigma)", idx: 0, min: 0, max: 20, valMin: 9.0, valMax: 11.0, defMin: 9.0, defMax: 11.0 },
             { name: "ρ (Rho)", idx: 1, min: 0, max: 40, valMin: 27.0, valMax: 29.0, defMin: 27.0, defMax: 29.0 },
@@ -49,33 +64,37 @@ const GEN_DEFS = {
     },
     halvorsen: { 
         label: "Halvorsen", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        boundsLimit: 300,
         params: [
-            { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 }
+            { name: "a (Friction)", idx: 0, min: 0.0, max: 5.0, valMin: 0.1, valMax: 2.0, defMin: 0.1, defMax: 2.0 }
         ] 
     },
     halvorsen_gen: { 
         label: "Halvorsen (Generalized)", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        boundsLimit: 300,
         params: [
-            { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 },
-            { name: "b", idx: 1, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, // Classic is 4.0
-            { name: "c", idx: 2, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, // Classic is 4.0
-            { name: "d", idx: 3, min: 0, max: 5, valMin: 0.5, valMax: 1.5, defMin: 0.5, defMax: 1.5 }  // Classic is 1.0
+            { name: "a", idx: 0, min: 0.0, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 },
+            { name: "b", idx: 1, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, 
+            { name: "c", idx: 2, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, 
+            { name: "d", idx: 3, min: 0, max: 5, valMin: 0.5, valMax: 1.5, defMin: 0.5, defMax: 1.5 }  
         ] 
     },
     poly: { 
         label: "Polynomial", isMap: false, dt: 0.05, 
-        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 0.1,
+        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        boundsLimit: 300,
         params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }] 
     },
     rikitake: { 
         label: "Rikitake", isMap: false, dt: 0.015,
-        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 0.2,
+        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 2.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        boundsLimit: 300,
         params: [
             { name: "μ (Mu)", idx: 0, min: 0, max: 10, valMin: 1.0, valMax: 6.0, defMin: 1.0, defMax: 6.0 },
             { name: "a (Alpha)", idx: 1, min: 0, max: 20, valMin: 2.0, valMax: 8.0, defMin: 2.0, defMax: 8.0 }
@@ -85,6 +104,7 @@ const GEN_DEFS = {
         label: "Chua", isMap: false, dt: 0.015,
         startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.2,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        boundsLimit: 300,
         params: [
             { name: "α (Alpha)", idx: 0, min: 0, max: 50, valMin: 9.0, valMax: 18.0, defMin: 9.0, defMax: 18.0 },
             { name: "β (Beta)", idx: 1, min: 0, max: 50, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
@@ -92,28 +112,21 @@ const GEN_DEFS = {
             { name: "m1", idx: 3, min: -2, max: 0, valMin: -0.9, valMax: -0.5, defMin: -0.9, defMax: -0.5 }
         ]
     },
-    hindmarsh: {
-        label: "Hindmarsh-Rose", isMap: false, dt: 0.02,
-        startX: -1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.25,
-        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 0.1,
+    moore: {
+        label: "Moore-Spiegel", isMap: false, dt: 0.0002,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.8,
+        voxRes: 0.5, minL: 0.002, minVol: 50, minWidth: 2.0,
+        boundsLimit: 300, settleSteps: 5000,
         params: [
-            { name: "r (Burst Rate)", idx: 4, min: 0.001, max: 0.05, valMin: 0.001, valMax: 0.01, defMin: 0.001, defMax: 0.01 },
-            { name: "I (Current)", idx: 7, min: 0, max: 10, valMin: 2.9, valMax: 3.4, defMin: 2.9, defMax: 3.4 }
+            { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
+            { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0, defMin: 80.0, defMax: 120.0 }
         ]
     },
-    // moore: {
-    //     label: "Moore-Spiegel", isMap: false, dt: 0.0002,
-    //     startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.8,
-    //     voxRes: 0.5, minL: 0.002, minVol: 50, minWidth: 2.0,
-    //     params: [
-    //         { name: "Γ (Gamma)", idx: 0, min: 0, max: 100, valMin: 20.0, valMax: 35.0, defMin: 20.0, defMax: 35.0 },
-    //         { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0, defMin: 80.0, defMax: 120.0 }
-    //     ]
-    // },
     dadras: { 
         label: "Dadras", isMap: false, dt: 0.015, 
-        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.035,
+        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.35,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        boundsLimit: 300,
         params: [
             { name: "p", idx: 0, min: 1, max: 5, valMin: 2.5, valMax: 3.5, defMin: 2.5, defMax: 3.5 },
             { name: "σ (Sigma)", idx: 1, min: 1, max: 5, valMin: 2.0, valMax: 3.5, defMin: 2.0, defMax: 3.5 },
@@ -124,16 +137,18 @@ const GEN_DEFS = {
     },
     thomas: { 
         label: "Thomas", isMap: false, dt: 0.05, 
-        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.05,
+        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.5,
         voxRes: 0.2, minL: 0.001, minVol: 25, minWidth: 0.5,
+        boundsLimit: 300, settleSteps: 5000, randomStartRange: 3.0,
         params: [
             { name: "b (Dissipation)", idx: 0, min: 0, max: 0.4, valMin: 0.18, valMax: 0.22, defMin: 0.18, defMax: 0.22 }
         ] 
     },
     aizawa: { 
         label: "Aizawa", isMap: false, dt: 0.01, 
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.06,
-        voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.05,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.6,
+        voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.5,
+        boundsLimit: 300,
         params: [
             { name: "ε (Epsilon)", idx: 0, min: 0, max: 2, valMin: 0.90, valMax: 1.0, defMin: 0.90, defMax: 1.0 },
             { name: "α (Alpha)", idx: 1, min: 0, max: 2, valMin: 0.65, valMax: 0.75, defMin: 0.65, defMax: 0.75 },
@@ -143,8 +158,7 @@ const GEN_DEFS = {
             { name: "ζ (Zeta)", idx: 5, min: 0, max: 0.5, valMin: 0.075, valMax: 0.125, defMin: 0.075, defMax: 0.125 }
         ] 
     },
-    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 0.1, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, params: [] },
-    //grn: { label: "GRN", isMap: false, dt: 0.015, startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.8, voxRes: 0.05, minL: 0.0015, minVol: 60, minWidth: 0.05, params: [] }
+    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 1.0, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, boundsLimit: 300, params: [] }
 };
 
 // --- GLOBAL STATE VARIABLES ---
@@ -153,7 +167,6 @@ let gpuRenderedDensity = 1.0;
 let gaussianTex = null;
 let currentConstraints = null;
 
-// Defaults (Will be tuned below if mobile)
 let camZoom = 2.0; 
 let camPanX = 0, camPanY = 0;
 let currentQuat = [0, 0, 0, 1]; 
@@ -162,18 +175,15 @@ let currentGenType = 'poly';
 let colorMode = 0;
 let colorSeed = [0.0, 0.0, 0.0];
 
-// Defaults for Glow Mode
 let blendMode = 'ADD';        
 let isInverted = false;      
 let incBlack = true;
 let incWhite = true;
 
-// Default Background to Dark/Black
 let bgA = [0.0, 0.0, 0.0];    
 let bgB = [0.1, 0.1, 0.1];    
 let bgParams = [0.0, 0.5, 1.0]; 
 
-// Performance Defaults
 let currentPhysicsSteps = 200000; 
 let currentOpacity = 0.06;          
 let currentIntensity = 2.0;  
@@ -185,23 +195,19 @@ let currentJitter = 0.5;
 let currentVariation = 0.0;
 let isExporting = false; 
 
-// Export State
-let exportUnit = 'inches'; // 'inches' or 'pixels'
+let exportUnit = 'inches'; 
 let exportTransparent = false; 
 
-// --- MOBILE SAFE DEFAULTS ---
 if (isMobile) {
-    currentPhysicsSteps = 200000; // Cap at 250k for safety
-    currentPointSize = 2.5;       // Thicker lines for small high-DPI screens
-    camZoom = 1.5;                // Zoom out slightly
-    currentDensity = 12;           // Keep density low
+    currentPhysicsSteps = 200000; 
+    currentPointSize = 2.5;       
+    camZoom = 1.5;                
+    currentDensity = 12;           
 }
 
-// --- VIEWPORT FBO REFS ---
 let viewFbo = null;
 let viewTex = null;
 
-// --- INTERACTION STATE ---
 let isDragging = false;
 let isPanning = false;
 let isRolling = false; 
@@ -272,7 +278,7 @@ const workerCode = `
         return (Math.floor(Math.random() * 25) - 12) / 10.0;
     }
 
-function mine(genType, constraints) {
+    function mine(genType, constraints) {
         let attempts = 0;
         let lastReport = Date.now();
         
@@ -280,116 +286,41 @@ function mine(genType, constraints) {
             attempts++;
             let coeffs;
             
-            // --- DYNAMIC PARAMETER GENERATION (POWER MODE) ---
+            const defs = GEN_DEFS[genType];
+            const hasParams = defs && defs.params && defs.params.length > 0;
+            
+            // 1. DYNAMIC ARRAY SIZING
+            let arraySize = 30; // Default for Poly
+            if (hasParams) {
+                arraySize = Math.max(...defs.params.map(p => p.idx)) + 1;
+            } else if (genType === 'sym') {
+                arraySize = 10;
+            }
+            
+            coeffs = new Float32Array(arraySize);
+
+            // 2. POWER MODE OVERRIDES
             if (constraints && constraints.params && constraints.params.length > 0) {
-                let size = 30; // Poly default
-                if (genType === 'rikitake' || genType === 'moore') size = 2;
-                if (genType === 'chua' || genType === 'clifford_map' || genType === 'halvorsen_gen') size = 4;
-                if (genType === 'hindmarsh') size = 8;
-                if (genType === 'dadras') size = 5;
-                if (genType === 'lorenz') size = 3;
-                if (genType === 'halvorsen') size = 1;
-                
-                coeffs = new Float32Array(size);
-
-                // Pre-fill defaults for complex constants (e.g. Hindmarsh)
-                if (genType === 'hindmarsh') {
-                    coeffs[0]=1; coeffs[1]=3; coeffs[2]=1; coeffs[3]=5; coeffs[5]=4; coeffs[6]=-1.6;
-                }
-
                 for(let p of constraints.params) {
                     if (p.idx === -1) { 
-                        // Poly global symmetric range
                         for(let i=0; i<30; i++) coeffs[i] = (Math.random() * (p.valMax*2)) - p.valMax;
                     } else {
-                        // Specific Parameter
                         coeffs[p.idx] = p.valMin + Math.random() * (p.valMax - p.valMin);
                     }
                 }
             } 
+            // 3. STANDARD GENERATION
             else {
-                // --- STANDARD DEFAULTS ---
                 if (genType === 'sym') {
-                    coeffs = new Float32Array(10); for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
+                    for(let i=0; i<10; i++) coeffs[i] = getRandomSprott(); 
                 } 
-                else if (genType === 'grn') {
-                    coeffs = new Float32Array(18);
-                    for(let i=0; i<9; i++) coeffs[i] = (Math.random() * 20) - 10; 
-                    coeffs[9] = (coeffs[0]+coeffs[1]+coeffs[2])*0.5 + (Math.random()-0.5);
-                    coeffs[10] = (coeffs[3]+coeffs[4]+coeffs[5])*0.5 + (Math.random()-0.5);
-                    coeffs[11] = (coeffs[6]+coeffs[7]+coeffs[8])*0.5 + (Math.random()-0.5);
-                    for(let i=12; i<15; i++) coeffs[i] = 2.5 + Math.random() * 4.5; 
-                    let d1 = 0.2+Math.random()*0.2; let d2 = 0.6+Math.random()*0.3; let d3 = 1.0+Math.random()*0.5; 
-                    let r = Math.random();
-                    if(r<0.33) { coeffs[15]=d1; coeffs[16]=d2; coeffs[17]=d3; }
-                    else if(r<0.66) { coeffs[15]=d3; coeffs[16]=d1; coeffs[17]=d2; }
-                    else { coeffs[15]=d2; coeffs[16]=d3; coeffs[17]=d1; }
-                }
-                else if (genType === 'dadras') {
-                    coeffs = new Float32Array(5);
-                    coeffs[0] = 2.5 + Math.random(); coeffs[1] = 2.0 + Math.random() * 1.5; 
-                    coeffs[2] = 1.5 + Math.random(); coeffs[3] = 1.5 + Math.random(); coeffs[4] = 8.0 + Math.random() * 2;   
-                }
-                else if (genType === 'thomas') {
-                    coeffs = new Float32Array(1); coeffs[0] = 0.18 + Math.random() * 0.04; 
-                }
-                else if (genType === 'aizawa') {
-                    coeffs = new Float32Array(6);
-                    coeffs[0]=0.95+(Math.random()-0.5)*0.1; coeffs[1]=0.7+(Math.random()-0.5)*0.1;
-                    coeffs[2]=0.6+(Math.random()-0.5)*0.1; coeffs[3]=3.5+(Math.random()-0.5)*0.5;
-                    coeffs[4]=0.25+(Math.random()-0.5)*0.1; coeffs[5]=0.1+(Math.random()-0.5)*0.05;
-                }
-                else if (genType === 'rikitake') {
-                    coeffs = new Float32Array(2);
-                    coeffs[0] = 1.0 + (Math.random() * 6.0); 
-                    coeffs[1] = 2.0 + (Math.random() * 8.0); 
-                }
-                else if (genType === 'chua') {
-                    coeffs = new Float32Array(4);
-                    coeffs[0] = 8.0 + Math.random() * 12.0;  
-                    coeffs[1] = 20.0 + Math.random() * 20.0; 
-                    coeffs[2] = -1.143 + (Math.random() - 0.5) * 0.5; 
-                    coeffs[3] = -0.714 + (Math.random() - 0.5) * 0.5; 
-                }
-                else if (genType === 'hindmarsh') {
-                    coeffs = new Float32Array(8);
-                    coeffs[0]=1.0; coeffs[1]=3.0; coeffs[2]=1.0; coeffs[3]=5.0; 
-                    coeffs[4] = 0.001 + (Math.random() * 0.01); 
-                    coeffs[5]=4.0; coeffs[6]=-1.6;
-                    coeffs[7] = 2.0 + Math.random() * 2.0; 
-                }
-                else if (genType === 'moore') {
-                    coeffs = new Float32Array(2);
-                    coeffs[0] = 5.0 + (Math.random() * 45.0); 
-                    coeffs[1] = 50.0 + (Math.random() * 100.0); 
-                }
-                else if (genType === 'lorenz') {
-                    coeffs = new Float32Array(3);
-                    coeffs[0] = 9.0 + Math.random() * 2.0;  
-                    coeffs[1] = 27.0 + Math.random() * 2.0; 
-                    coeffs[2] = 2.5 + Math.random() * 0.3;  
-                }
-                else if (genType === 'halvorsen') {
-                    coeffs = new Float32Array(1);
-                    coeffs[0] = 1.8 + Math.random() * 0.2; 
-                }
-                else if (genType === 'halvorsen_gen') {
-                    coeffs = new Float32Array(4);
-                    coeffs[0] = 1.8 + Math.random() * 0.4; // a
-                    coeffs[1] = 3.0 + Math.random() * 2.0; // b
-                    coeffs[2] = 3.0 + Math.random() * 2.0; // c
-                    coeffs[3] = 0.5 + Math.random() * 1.0; // d
-                }
-                else if (genType === 'clifford_map') {
-                    coeffs = new Float32Array(4);
-                    coeffs[0] = (Math.random() - 0.5) * 6.0;
-                    coeffs[1] = (Math.random() - 0.5) * 6.0;
-                    coeffs[2] = (Math.random() - 0.5) * 6.0;
-                    coeffs[3] = (Math.random() - 0.5) * 6.0;
-                }
-                else {
-                    coeffs = new Float32Array(30);
+                else if (genType === 'poly') {
                     for(let i=0; i<30; i++) coeffs[i] = (Math.random() * 2.4) - 1.2;
+                }
+                else if (hasParams) {
+                    for (let p of defs.params) {
+                        coeffs[p.idx] = p.defMin + Math.random() * (p.defMax - p.defMin);
+                    }
                 }
             }
             
@@ -398,24 +329,16 @@ function mine(genType, constraints) {
             if (checkChaosTail(coeffs, genType, dtOverride)) {
                 const result = generateTrace(50000, 1, 0, coeffs, genType, dtOverride);
                 safePostMessage({
-                    type: 'found', 
-                    source: 'mine', 
-                    coeffs: coeffs, 
-                    genType: genType,
-                    constraints: constraints, 
-                    density: 1, 
-                    buffer: result.buffer, 
-                    metaBuffer: result.metaBuffer, 
-                    attempts: attempts
+                    type: 'found', source: 'mine', coeffs: coeffs, 
+                    genType: genType, constraints: constraints, density: 1, 
+                    buffer: result.buffer, metaBuffer: result.metaBuffer, attempts: attempts
                 }, [result.buffer, result.metaBuffer]);
                 break;
             }
             
-            if (attempts % 1000 === 0) { 
-                 if (Date.now() - lastReport > 500) {
-                    self.postMessage({type: 'status', msg: 'Scanning (' + genType + ')... ' + attempts});
-                    lastReport = Date.now();
-                 }
+            if (attempts % 1000 === 0 && Date.now() - lastReport > 500) { 
+                self.postMessage({type: 'status', msg: 'Scanning (' + genType + ')... ' + attempts});
+                lastReport = Date.now();
             }
         }
     }
@@ -423,6 +346,7 @@ function mine(genType, constraints) {
     function mutate(parentCoeffs, genType) {
         let attempts = 0;
         const parent = new Float32Array(parentCoeffs);
+        const defs = GEN_DEFS[genType];
         
         while(true) {
             attempts++;
@@ -433,61 +357,29 @@ function mine(genType, constraints) {
                 child[idx] += (Math.random() < 0.5 ? 0.1 : -0.1); 
                 child[idx] = Math.round(child[idx]*10)/10;
             } 
-            else if (genType === 'grn') {
-                const range = (idx < 9) ? 2.0 : 0.5;
-                child[idx] += (Math.random() - 0.5) * range;
-                if (idx >= 12) child[idx] = Math.abs(child[idx]) + 0.1; 
-            }
-            else if (genType === 'rikitake') {
-                child[idx] += (Math.random() - 0.5) * 0.5;
-            }
-            else if (genType === 'chua') {
-                child[idx] += (Math.random() - 0.5) * 1.0;
-            }
-            else if (genType === 'hindmarsh') {
-                if (idx === 7) child[idx] += (Math.random() - 0.5) * 0.1;
-                else if (idx === 4) child[idx] += (Math.random() - 0.5) * 0.001;
-            }
-            else if (genType === 'moore') {
-                child[idx] += (Math.random() - 0.5) * 2.0; 
-            }
-            else if (genType === 'dadras') {
+            else if (genType === 'poly') {
                 child[idx] += (Math.random() - 0.5) * 0.1;
             }
-            else if (genType === 'thomas') {
-                child[0] += (Math.random() - 0.5) * 0.01;
-            }
-            else if (genType === 'aizawa') {
-                child[idx] += (Math.random() - 0.5) * 0.02;
-            }
-            else if (genType === 'lorenz') {
-                if (idx === 1) child[idx] += (Math.random() - 0.5) * 1.0; 
-                else child[idx] += (Math.random() - 0.5) * 0.1;
-            }
-            else if (genType === 'halvorsen') {
-                child[idx] += (Math.random() - 0.5) * 0.05;
-            }
-            else if (genType === 'halvorsen_gen') {
-                child[idx] += (Math.random() - 0.5) * 0.08;
-            }
-            else if (genType === 'clifford_map') {
-                child[idx] += (Math.random() - 0.5) * 0.1;
-            }
-            else {
-                child[idx] += (Math.random() - 0.5) * 0.1;
+            else if (defs && defs.params) {
+                const pDef = defs.params.find(p => p.idx === idx);
+                if (pDef) {
+                    const range = pDef.defMax - pDef.defMin;
+                    // If range is 0 (like our hidden constants), this skips mutation!
+                    if (range > 0) {
+                        child[idx] += (Math.random() - 0.5) * (range * 0.05); 
+                    } else {
+                        // Force a re-roll of the index so we don't waste an attempt mutating a constant
+                        continue; 
+                    }
+                }
             }
 
             if (checkChaosTail(child, genType, null)) {
                 const result = generateTrace(50000, 1, 0, child, genType, null);
                 safePostMessage({
-                    type: 'found', 
-                    source: 'mutate', 
-                    coeffs: child, 
-                    genType: genType,
-                    density: 1,
-                    buffer: result.buffer, 
-                    metaBuffer: result.metaBuffer, 
-                    attempts: attempts
+                    type: 'found', source: 'mutate', coeffs: child, 
+                    genType: genType, density: 1, 
+                    buffer: result.buffer, metaBuffer: result.metaBuffer, attempts: attempts
                 }, [result.buffer, result.metaBuffer]);
                 break;
             }
@@ -502,12 +394,10 @@ function mine(genType, constraints) {
         let y = def.startY !== undefined ? def.startY : 0.05;
         let z = def.startZ !== undefined ? def.startZ : 0.05;
 
-        // Special random starts
-        if (genType === 'grn') { x = Math.random(); y = Math.random(); z = Math.random(); }
-        if (genType === 'thomas') { 
-            x = (Math.random() - 0.5) * 3.0; 
-            y = (Math.random() - 0.5) * 3.0; 
-            z = (Math.random() - 0.5) * 3.0; 
+        if (def.randomStartRange) {
+            x = (Math.random() - 0.5) * def.randomStartRange;
+            y = (Math.random() - 0.5) * def.randomStartRange;
+            z = (Math.random() - 0.5) * def.randomStartRange;
         }
 
         let sx = x + 0.000001, sy = y, sz = z;
@@ -529,17 +419,6 @@ function mine(genType, constraints) {
                 res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
                 res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
             } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
             else if (genType === 'rikitake') {
                 res.dx = -p[0]*px + py*pz;
                 res.dy = -p[0]*py + px*(p[1] - pz);
@@ -550,13 +429,6 @@ function mine(genType, constraints) {
                 res.dx = p[0]*(py - px - h);
                 res.dy = px - py + pz;
                 res.dz = -p[1]*py;
-            }
-            else if (genType === 'hindmarsh') {
-                let x2 = px*px;
-                let x3 = x2*px;
-                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
-                res.dy = p[2] - p[3]*x2 - py;
-                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
             }
             else if (genType === 'moore') {
                 res.dx = py;
@@ -584,12 +456,11 @@ function mine(genType, constraints) {
                 res.dy = px * (p[1] - pz) - py;
                 res.dz = px * py - p[2] * pz;
             }
-else if (genType === 'halvorsen') {
+            else if (genType === 'halvorsen') {
                 res.dx = -p[0] * px - 4.0 * py - 4.0 * pz - py * py;
                 res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
                 res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
             }
-            // --- ADD GENERALIZED HALVORSEN ---
             else if (genType === 'halvorsen_gen') {
                 res.dx = -p[0] * px - p[1] * py - p[2] * pz - p[3] * py * py;
                 res.dy = -p[0] * py - p[1] * pz - p[2] * px - p[3] * pz * pz;
@@ -604,7 +475,8 @@ else if (genType === 'halvorsen') {
 
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
-        let settleSteps = (genType === 'thomas' || genType === 'moore') ? 5000 : 1500;
+        let settleSteps = def.settleSteps || 1500;
+        let boundsLimit = def.boundsLimit || 300;
 
         for(let i=0; i<settleSteps; i++) {
             if (def.isMap) {
@@ -623,7 +495,7 @@ else if (genType === 'halvorsen') {
                 y += (k1.dy + 2*k2.dy + 2*k3.dy + k4.dy)*(dt/6);
                 z += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
             }
-            if (Math.abs(x) > 300 || isNaN(x)) return false; 
+            if (Math.abs(x) > boundsLimit || isNaN(x)) return false; 
         }
         
         sx = x + 0.000001; sy = y; sz = z;
@@ -666,7 +538,7 @@ else if (genType === 'halvorsen') {
                 sz += (k1.dz + 2*k2.dz + 2*k3.dz + k4.dz)*(dt/6);
             }
 
-            if (Math.abs(x) > 300) return false;
+            if (Math.abs(x) > boundsLimit) return false;
 
             let dx = x - sx, dy = y - sy, dz = z - sz;
             let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
@@ -711,11 +583,10 @@ else if (genType === 'halvorsen') {
         let y = def.startY !== undefined ? def.startY : 0.05;
         let z = def.startZ !== undefined ? def.startZ : 0.05;
 
-        // Trace special randomization
-        if (genType === 'thomas') { 
-            x = (rand() - 0.5) * 3.0; 
-            y = (rand() - 0.5) * 3.0; 
-            z = (rand() - 0.5) * 3.0;
+        if (def.randomStartRange) {
+            x = (rand() - 0.5) * def.randomStartRange;
+            y = (rand() - 0.5) * def.randomStartRange;
+            z = (rand() - 0.5) * def.randomStartRange;
         }
 
         let dt = dtOverride ? dtOverride : (def.dt || 0.015);
@@ -736,17 +607,6 @@ else if (genType === 'halvorsen') {
                 res.dy = p[0] + p[1]*py + p[2]*pz + p[3]*px + p[4]*py*py + p[5]*pz*pz + p[6]*px*px + p[7]*py*pz + p[8]*py*px + p[9]*pz*px;
                 res.dz = p[0] + p[1]*pz + p[2]*px + p[3]*py + p[4]*pz*pz + p[5]*px*px + p[6]*py*py + p[7]*pz*px + p[8]*pz*py + p[9]*px*py;
             } 
-            else if (genType === 'grn') {
-                let s1 = p[0]*px + p[1]*py + p[2]*pz - p[9];
-                let s2 = p[3]*px + p[4]*py + p[5]*pz - p[10];
-                let s3 = p[6]*px + p[7]*py + p[8]*pz - p[11];
-                let act1 = 1.0 / (1.0 + Math.exp(-p[12] * s1));
-                let act2 = 1.0 / (1.0 + Math.exp(-p[13] * s2));
-                let act3 = 1.0 / (1.0 + Math.exp(-p[14] * s3));
-                res.dx = act1 - p[15]*px;
-                res.dy = act2 - p[16]*py;
-                res.dz = act3 - p[17]*pz;
-            }
             else if (genType === 'rikitake') {
                 res.dx = -p[0]*px + py*pz;
                 res.dy = -p[0]*py + px*(p[1] - pz);
@@ -757,13 +617,6 @@ else if (genType === 'halvorsen') {
                 res.dx = p[0]*(py - px - h);
                 res.dy = px - py + pz;
                 res.dz = -p[1]*py;
-            }
-            else if (genType === 'hindmarsh') {
-                let x2 = px*px;
-                let x3 = x2*px;
-                res.dx = py - p[0]*x3 + p[1]*x2 - pz + p[7];
-                res.dy = p[2] - p[3]*x2 - py;
-                res.dz = p[4]*(p[5]*(px - p[6]) - pz);
             }
             else if (genType === 'moore') {
                 res.dx = py;
@@ -791,12 +644,11 @@ else if (genType === 'halvorsen') {
                 res.dy = px * (p[1] - pz) - py;
                 res.dz = px * py - p[2] * pz;
             }
-else if (genType === 'halvorsen') {
+            else if (genType === 'halvorsen') {
                 res.dx = -p[0] * px - 4.0 * py - 4.0 * pz - py * py;
                 res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
                 res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
             }
-            // --- ADD GENERALIZED HALVORSEN ---
             else if (genType === 'halvorsen_gen') {
                 res.dx = -p[0] * px - p[1] * py - p[2] * pz - p[3] * py * py;
                 res.dy = -p[0] * py - p[1] * pz - p[2] * px - p[3] * pz * pz;
@@ -845,8 +697,11 @@ else if (genType === 'halvorsen') {
             return { x:x, y:y, z:z, vel: logVel, curv: curv };
         }
 
+        let settleSteps = def.settleSteps || 2000;
+        let boundsLimit = def.boundsLimit || 300;
+
         // 1. Settle
-        for(let i=0; i<2000; i++) stepPhysics();
+        for(let i=0; i<settleSteps; i++) stepPhysics();
         for(let i=0; i<4; i++) history.push(stepPhysics());
 
         let outIdx = 0;
@@ -855,7 +710,7 @@ else if (genType === 'halvorsen') {
         for(let i=0; i<nSteps; i++) {
             let p0 = history[0]; let p1 = history[1]; let p2 = history[2]; let p3 = history[3];
             
-            if (Math.abs(p2.x) > 300 || Math.abs(p2.y) > 300 || Math.abs(p2.z) > 300 || 
+            if (Math.abs(p2.x) > boundsLimit || Math.abs(p2.y) > boundsLimit || Math.abs(p2.z) > boundsLimit || 
                 isNaN(p2.x) || isNaN(p2.y) || isNaN(p2.z)) {
                 break; 
             }
@@ -1898,14 +1753,14 @@ div.appendChild(createSection("GENERATION", `
         <option value="sym">Symmetric (CodeParade)</option>
         <option value="clifford_map">Clifford Map (3D Discrete)</option>
         <option value="lorenz">Lorenz</option>
-<option value="halvorsen">Halvorsen</option>
+        <option value="halvorsen">Halvorsen</option>
         <option value="halvorsen_gen">Halvorsen (Generalized)</option>
         <option value="dadras">Dadras (Complex Butterfly)</option>
         <option value="thomas">Thomas (Cyclic Lattice)</option>
         <option value="aizawa">Aizawa (Sphere Tube)</option>
         <option value="rikitake">Rikitake (Double Spiral)</option>
         <option value="chua">Chua (Double Scroll)</option>
-        <option value="hindmarsh">Hindmarsh-Rose (Neuron)</option>
+        <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:5px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ SEARCH</button>
