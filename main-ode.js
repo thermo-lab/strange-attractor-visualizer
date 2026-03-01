@@ -41,7 +41,7 @@ const GEN_DEFS = {
     clifford_map: { 
         label: "Clifford Map (3D Discrete)", 
         isMap: true, dt: 0.015,
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.6,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.06,
         voxRes: 0.1, minL: 0.0015, minVol: 45, minWidth: 0.5,
         boundsLimit: 300,
         params: [
@@ -53,7 +53,7 @@ const GEN_DEFS = {
     },
     lorenz: { 
         label: "Lorenz", isMap: false, dt: 0.005, 
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 1.0,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -64,7 +64,7 @@ const GEN_DEFS = {
     },
     halvorsen: { 
         label: "Halvorsen", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -73,7 +73,7 @@ const GEN_DEFS = {
     },
     halvorsen_gen: { 
         label: "Halvorsen (Generalized)", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -85,14 +85,14 @@ const GEN_DEFS = {
     },
     poly: { 
         label: "Polynomial", isMap: false, dt: 0.05, 
-        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 1.0,
+        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }] 
     },
     rikitake: { 
         label: "Rikitake", isMap: false, dt: 0.015,
-        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 2.0,
+        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 0.02,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -102,7 +102,7 @@ const GEN_DEFS = {
     },
     chua: {
         label: "Chua", isMap: false, dt: 0.015,
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.2,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.02,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -114,7 +114,7 @@ const GEN_DEFS = {
     },
     moore: {
         label: "Moore-Spiegel", isMap: false, dt: 0.0002,
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.8,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.08,
         voxRes: 0.5, minL: 0.002, minVol: 50, minWidth: 2.0,
         boundsLimit: 300, settleSteps: 5000,
         params: [
@@ -124,7 +124,7 @@ const GEN_DEFS = {
     },
     dadras: { 
         label: "Dadras", isMap: false, dt: 0.015, 
-        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.35,
+        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.035,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -137,7 +137,7 @@ const GEN_DEFS = {
     },
     thomas: { 
         label: "Thomas", isMap: false, dt: 0.05, 
-        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.5,
+        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.05,
         voxRes: 0.2, minL: 0.001, minVol: 25, minWidth: 0.5,
         boundsLimit: 300, settleSteps: 5000, randomStartRange: 3.0,
         params: [
@@ -146,7 +146,7 @@ const GEN_DEFS = {
     },
     aizawa: { 
         label: "Aizawa", isMap: false, dt: 0.01, 
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.6,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.06,
         voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.5,
         boundsLimit: 300,
         params: [
