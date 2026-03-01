@@ -57,7 +57,7 @@ const GEN_DEFS = {
     },
     halvorsen_gen: { 
         label: "Halvorsen (Generalized)", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 },
@@ -132,7 +132,7 @@ const GEN_DEFS = {
     },
     aizawa: { 
         label: "Aizawa", isMap: false, dt: 0.01, 
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.6,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.06,
         voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.05,
         params: [
             { name: "ε (Epsilon)", idx: 0, min: 0, max: 2, valMin: 0.90, valMax: 1.0, defMin: 0.90, defMax: 1.0 },
