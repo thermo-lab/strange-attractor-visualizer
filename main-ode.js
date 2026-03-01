@@ -2477,14 +2477,17 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_variation"), currentVariation); 
 
     const focusVal = (parseInt(document.getElementById('ui-focus').value) / 1000.0); 
-    const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) / 1000.0);
+const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) / 1000.0);
     const apertureVal = parseInt(document.getElementById('ui-aperture').value); 
 
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusDist"), focusVal);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-    let targetOpacity = opac / currentDensity;
+    // --- RESTORED: ZOOM BRIGHTNESS COMPENSATION (EXPORT) ---
+    const zoomCorrection = useZoom / 2.0;
+
+    let targetOpacity = (opac / currentDensity) * zoomCorrection;
     let safeOpacity = Math.max(targetOpacity, 0.000001); 
     
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), safeOpacity);
@@ -2765,9 +2768,15 @@ function renderFrame() {
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-        const interactionDimmer = isInteracting ? 0.4 : 1.0; 
+const interactionDimmer = isInteracting ? 0.4 : 1.0; 
 
-        let targetOpacity = (currentOpacity / gpuRenderedDensity) * interactionDimmer; 
+        // --- RESTORED: ZOOM BRIGHTNESS COMPENSATION ---
+        // Normalizes around the baseline zoom of 2.0. 
+        // Zooms out (<2.0) dim the opacity to prevent blowouts.
+        // Zooms in (>2.0) boost the opacity to prevent fading.
+        const zoomCorrection = camZoom / 2.0; 
+
+        let targetOpacity = (currentOpacity / gpuRenderedDensity) * interactionDimmer * zoomCorrection; 
         let safeOpacity = Math.max(targetOpacity, 0.000001); 
         
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), safeOpacity);
