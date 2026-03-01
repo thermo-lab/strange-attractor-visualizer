@@ -55,6 +55,17 @@ const GEN_DEFS = {
             { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 }
         ] 
     },
+    halvorsen_gen: { 
+        label: "Halvorsen (Generalized)", isMap: false, dt: 0.005, 
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        params: [
+            { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 },
+            { name: "b", idx: 1, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, // Classic is 4.0
+            { name: "c", idx: 2, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, // Classic is 4.0
+            { name: "d", idx: 3, min: 0, max: 5, valMin: 0.5, valMax: 1.5, defMin: 0.5, defMax: 1.5 }  // Classic is 1.0
+        ] 
+    },
     poly: { 
         label: "Polynomial", isMap: false, dt: 0.05, 
         startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 0.1,
@@ -358,10 +369,13 @@ const workerCode = `
                     coeffs[1] = 27.0 + Math.random() * 2.0; // Rho
                     coeffs[2] = 2.5 + Math.random() * 0.3;  // Beta
                 }
-                else if (genType === 'halvorsen') {
-                    coeffs = new Float32Array(1);
-                    coeffs[0] = 1.8 + Math.random() * 0.2; // a
-                }
+else if (genType === 'halvorsen') {
+                child[idx] += (Math.random() - 0.5) * 0.05;
+            }
+            // --- ADD GENERALIZED HALVORSEN ---
+            else if (genType === 'halvorsen_gen') {
+                child[idx] += (Math.random() - 0.5) * 0.08;
+            }
                 else if (genType === 'clifford_map') {
                     coeffs = new Float32Array(4);
                     coeffs[0] = (Math.random() - 0.5) * 6.0;
@@ -446,8 +460,12 @@ const workerCode = `
                 if (idx === 1) child[idx] += (Math.random() - 0.5) * 1.0; 
                 else child[idx] += (Math.random() - 0.5) * 0.1;
             }
-            else if (genType === 'halvorsen') {
+else if (genType === 'halvorsen') {
                 child[idx] += (Math.random() - 0.5) * 0.05;
+            }
+            // --- ADD GENERALIZED HALVORSEN ---
+            else if (genType === 'halvorsen_gen') {
+                child[idx] += (Math.random() - 0.5) * 0.08;
             }
             else if (genType === 'clifford_map') {
                 child[idx] += (Math.random() - 0.5) * 0.1;
@@ -563,10 +581,16 @@ const workerCode = `
                 res.dy = px * (p[1] - pz) - py;
                 res.dz = px * py - p[2] * pz;
             }
-            else if (genType === 'halvorsen') {
+else if (genType === 'halvorsen') {
                 res.dx = -p[0] * px - 4.0 * py - 4.0 * pz - py * py;
                 res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
                 res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
+            }
+            // --- ADD GENERALIZED HALVORSEN ---
+            else if (genType === 'halvorsen_gen') {
+                res.dx = -p[0] * px - p[1] * py - p[2] * pz - p[3] * py * py;
+                res.dy = -p[0] * py - p[1] * pz - p[2] * px - p[3] * pz * pz;
+                res.dz = -p[0] * pz - p[1] * px - p[2] * py - p[3] * px * px;
             }
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
@@ -764,10 +788,16 @@ const workerCode = `
                 res.dy = px * (p[1] - pz) - py;
                 res.dz = px * py - p[2] * pz;
             }
-            else if (genType === 'halvorsen') {
+else if (genType === 'halvorsen') {
                 res.dx = -p[0] * px - 4.0 * py - 4.0 * pz - py * py;
                 res.dy = -p[0] * py - 4.0 * pz - 4.0 * px - pz * pz;
                 res.dz = -p[0] * pz - 4.0 * px - 4.0 * py - px * px;
+            }
+            // --- ADD GENERALIZED HALVORSEN ---
+            else if (genType === 'halvorsen_gen') {
+                res.dx = -p[0] * px - p[1] * py - p[2] * pz - p[3] * py * py;
+                res.dy = -p[0] * py - p[1] * pz - p[2] * px - p[3] * pz * pz;
+                res.dz = -p[0] * pz - p[1] * px - p[2] * py - p[3] * px * px;
             }
             else {
                 res.dx = a0 + a1*px + a2*py + a3*pz + a4*px*px + a5*py*py + a6*pz*pz + a7*px*py + a8*px*pz + a9*py*pz;
@@ -1865,7 +1895,8 @@ div.appendChild(createSection("GENERATION", `
         <option value="sym">Symmetric (CodeParade)</option>
         <option value="clifford_map">Clifford Map (3D Discrete)</option>
         <option value="lorenz">Lorenz</option>
-        <option value="halvorsen">Halvorsen</option>
+<option value="halvorsen">Halvorsen</option>
+        <option value="halvorsen_gen">Halvorsen (Generalized)</option>
         <option value="dadras">Dadras (Complex Butterfly)</option>
         <option value="thomas">Thomas (Cyclic Lattice)</option>
         <option value="aizawa">Aizawa (Sphere Tube)</option>
