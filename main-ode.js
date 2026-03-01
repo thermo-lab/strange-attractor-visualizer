@@ -28,7 +28,7 @@ const GEN_DEFS = {
     clifford_map: { 
         label: "Clifford Map (3D Discrete)", 
         isMap: true, dt: 0.015, // dt unused by maps but kept for safety
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.6,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.3,
         voxRes: 0.1, minL: 0.0015, minVol: 45, minWidth: 0.5,
         params: [
             { name: "a", idx: 0, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
