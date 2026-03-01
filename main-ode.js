@@ -289,12 +289,14 @@ const workerCode = `
             const defs = GEN_DEFS[genType];
             const hasParams = defs && defs.params && defs.params.length > 0;
             
-            // 1. DYNAMIC ARRAY SIZING
-            let arraySize = 30; // Default for Poly
-            if (hasParams) {
-                arraySize = Math.max(...defs.params.map(p => p.idx)) + 1;
+// 1. DYNAMIC ARRAY SIZING
+            let arraySize = 30; // Fallback
+            if (genType === 'poly') {
+                arraySize = 30;
             } else if (genType === 'sym') {
                 arraySize = 10;
+            } else if (hasParams) {
+                arraySize = Math.max(...defs.params.map(p => p.idx)) + 1;
             }
             
             coeffs = new Float32Array(arraySize);
