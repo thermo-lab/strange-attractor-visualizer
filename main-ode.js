@@ -92,7 +92,7 @@ const GEN_DEFS = {
     },
     rikitake: { 
         label: "Rikitake", isMap: false, dt: 0.015,
-        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 0.02,
+        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 0.05,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -102,7 +102,7 @@ const GEN_DEFS = {
     },
     chua: {
         label: "Chua", isMap: false, dt: 0.015,
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.02,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -137,7 +137,7 @@ const GEN_DEFS = {
     },
     thomas: { 
         label: "Thomas", isMap: false, dt: 0.05, 
-        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.05,
+        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
         voxRes: 0.2, minL: 0.001, minVol: 25, minWidth: 0.5,
         boundsLimit: 300, settleSteps: 5000, randomStartRange: 3.0,
         params: [
@@ -146,7 +146,7 @@ const GEN_DEFS = {
     },
     aizawa: { 
         label: "Aizawa", isMap: false, dt: 0.01, 
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.06,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
         voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.5,
         boundsLimit: 300,
         params: [
@@ -158,7 +158,7 @@ const GEN_DEFS = {
             { name: "ζ (Zeta)", idx: 5, min: 0, max: 0.5, valMin: 0.075, valMax: 0.125, defMin: 0.075, defMax: 0.125 }
         ] 
     },
-    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 1.0, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, boundsLimit: 300, params: [] }
+    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 0.1, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, boundsLimit: 300, params: [] }
 };
 
 // --- GLOBAL STATE VARIABLES ---
@@ -185,8 +185,8 @@ let bgB = [0.1, 0.1, 0.1];
 let bgParams = [0.0, 0.5, 1.0]; 
 
 let currentPhysicsSteps = 200000; 
-let currentOpacity = 0.06;          
-let currentIntensity = 2.0;  
+let currentOpacity = 0.03;
+let currentIntensity = 1.0;
 let currentGamma = 1.8;
 let currentNoise = 0.05;      
 let currentPointSize = 1.0;
@@ -1762,7 +1762,6 @@ div.appendChild(createSection("GENERATION", `
         <option value="aizawa">Aizawa (Sphere Tube)</option>
         <option value="rikitake">Rikitake (Double Spiral)</option>
         <option value="chua">Chua (Double Scroll)</option>
-        <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:5px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ SEARCH</button>
