@@ -39,7 +39,7 @@ const GEN_DEFS = {
     },
     lorenz: { 
         label: "Lorenz", isMap: false, dt: 0.005, 
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 1.0,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "σ (Sigma)", idx: 0, min: 0, max: 20, valMin: 9.0, valMax: 11.0, defMin: 9.0, defMax: 11.0 },
@@ -49,7 +49,7 @@ const GEN_DEFS = {
     },
     halvorsen: { 
         label: "Halvorsen", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "a", idx: 0, min: 1, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 }
@@ -63,7 +63,7 @@ const GEN_DEFS = {
     },
     rikitake: { 
         label: "Rikitake", isMap: false, dt: 0.015,
-        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 2.0,
+        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 0.2,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "μ (Mu)", idx: 0, min: 0, max: 10, valMin: 1.0, valMax: 6.0, defMin: 1.0, defMax: 6.0 },
@@ -84,7 +84,7 @@ const GEN_DEFS = {
     hindmarsh: {
         label: "Hindmarsh-Rose", isMap: false, dt: 0.02,
         startX: -1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.25,
-        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
+        voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 0.1,
         params: [
             { name: "r (Burst Rate)", idx: 4, min: 0.001, max: 0.05, valMin: 0.001, valMax: 0.01, defMin: 0.001, defMax: 0.01 },
             { name: "I (Current)", idx: 7, min: 0, max: 10, valMin: 2.9, valMax: 3.4, defMin: 2.9, defMax: 3.4 }
@@ -101,7 +101,7 @@ const GEN_DEFS = {
     // },
     dadras: { 
         label: "Dadras", isMap: false, dt: 0.015, 
-        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.35,
+        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.035,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [
             { name: "p", idx: 0, min: 1, max: 5, valMin: 2.5, valMax: 3.5, defMin: 2.5, defMax: 3.5 },
@@ -113,7 +113,7 @@ const GEN_DEFS = {
     },
     thomas: { 
         label: "Thomas", isMap: false, dt: 0.05, 
-        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.5,
+        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.05,
         voxRes: 0.2, minL: 0.001, minVol: 25, minWidth: 0.5,
         params: [
             { name: "b (Dissipation)", idx: 0, min: 0, max: 0.4, valMin: 0.18, valMax: 0.22, defMin: 0.18, defMax: 0.22 }
@@ -122,7 +122,7 @@ const GEN_DEFS = {
     aizawa: { 
         label: "Aizawa", isMap: false, dt: 0.01, 
         startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.6,
-        voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.5,
+        voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.05,
         params: [
             { name: "ε (Epsilon)", idx: 0, min: 0, max: 2, valMin: 0.90, valMax: 1.0, defMin: 0.90, defMax: 1.0 },
             { name: "α (Alpha)", idx: 1, min: 0, max: 2, valMin: 0.65, valMax: 0.75, defMin: 0.65, defMax: 0.75 },
@@ -132,7 +132,7 @@ const GEN_DEFS = {
             { name: "ζ (Zeta)", idx: 5, min: 0, max: 0.5, valMin: 0.075, valMax: 0.125, defMin: 0.075, defMax: 0.125 }
         ] 
     },
-    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 1.0, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, params: [] },
+    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 0.1, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, params: [] },
     //grn: { label: "GRN", isMap: false, dt: 0.015, startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.8, voxRes: 0.05, minL: 0.0015, minVol: 60, minWidth: 0.05, params: [] }
 };
 
