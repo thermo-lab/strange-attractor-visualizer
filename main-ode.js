@@ -57,7 +57,7 @@ const GEN_DEFS = {
     },
     poly: { 
         label: "Polynomial", isMap: false, dt: 0.05, 
-        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 1.0,
+        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 0.1,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }] 
     },
