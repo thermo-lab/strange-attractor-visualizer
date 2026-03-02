@@ -2077,9 +2077,30 @@ btnVideo.onclick = async () => {
         const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
         const totalFrames = Math.floor(duration * fps);
         
+        // --- NEW: DIMENSION & CROP GUIDE OVERRIDES ---
+        let targetW = canvas.width;
+        let targetH = canvas.height;
+        
+        if (exportUnit === 'pixels') {
+            targetW = parseInt(document.getElementById('ui-print-w').value) || canvas.width;
+            targetH = parseInt(document.getElementById('ui-print-h').value) || canvas.height;
+        }
+
         // Hardware encoders strictly require even dimensions
-        const w = canvas.width - (canvas.width % 2);
-        const h = canvas.height - (canvas.height % 2);
+        const w = targetW - (targetW % 2);
+        const h = targetH - (targetH % 2);
+
+        // Save original state so we can restore it silently later
+        const origW = canvas.width;
+        const origH = canvas.height;
+        const guideCheckbox = document.getElementById('ui-show-guide');
+        const wasGuideOn = guideCheckbox ? guideCheckbox.checked : false;
+
+        // Apply export state (forces WebGL into the new resolution)
+        canvas.width = w;
+        canvas.height = h;
+        resizeViewportFBO();
+        if (guideCheckbox) guideCheckbox.checked = false;
 
         let muxer = new Mp4Muxer.Muxer({
             target: new Mp4Muxer.ArrayBufferTarget(),
@@ -2096,18 +2117,23 @@ btnVideo.onclick = async () => {
             }
         });
 
+        // --- NEW: DYNAMIC BITRATE SCALING ---
+        // 1920x1080 @ 60fps = ~15Mbps. This scales it automatically for 4K, 720p, etc.
+        const pixelCount = w * h;
+        const baseBitrate = (pixelCount / (1920 * 1080)) * 15_000_000;
+
         videoEncoder.configure({
             codec: 'avc1.640033', 
             width: w,
             height: h,
-            bitrate: 15_000_000, 
+            bitrate: Math.floor(baseBitrate), 
             framerate: fps
         });
 
         const originalQuat = [...currentQuat];
         
         for (let i = 0; i < totalFrames; i++) {
-            exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames}`;
+            exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames} (${w}x${h})`;
             
             const angle = (i / totalFrames) * Math.PI * 2;
             const turnQuat = qFromAxisAngle([0, 1, 0], angle);
@@ -2139,6 +2165,11 @@ btnVideo.onclick = async () => {
         a.click(); 
         document.body.removeChild(a);
         
+        // --- RESTORE ORIGINAL STATE ---
+        canvas.width = origW;
+        canvas.height = origH;
+        resizeViewportFBO();
+        if (guideCheckbox) guideCheckbox.checked = wasGuideOn;
         currentQuat = originalQuat;
         isExporting = false;
         exportLog.innerText = "✅ Video Saved!";
@@ -2149,6 +2180,8 @@ btnVideo.onclick = async () => {
         console.error("Video Export Crash:", err);
         exportLog.innerText = "❌ Crash: " + err.message;
         exportLog.style.color = "red";
+        
+        // Emergency cleanup if something throws
         isExporting = false;
     }
 };
