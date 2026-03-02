@@ -1943,6 +1943,7 @@ const sliderGamma = document.getElementById('ui-gamma');
 const sliderSmooth = document.getElementById('ui-deband');
 const btnSnap = document.getElementById('ui-btn-snap');
 const btnOrder = document.getElementById('ui-btn-order');
+const btnVideo = document.getElementById('ui-btn-video');
 const uiExport = document.getElementById('ui-export-status');
 const inpW = document.getElementById('ui-print-w');
 const inpH = document.getElementById('ui-print-h');
@@ -2051,6 +2052,107 @@ sliderSmooth.oninput = (e) => { currentNoise = parseInt(e.target.value) / 200.0;
 btnSnap.onclick = () => { startTiledExport('download'); };
 btnOrder.onclick = () => { startTiledExport('pod'); };
 const btnVideo = document.getElementById('ui-btn-video');
+
+btnVideo.onclick = async () => {
+    const exportLog = document.getElementById('ui-export-status');
+    if (!exportLog) return;
+
+    if (!currentCoeffs) {
+        exportLog.innerText = "⚠️ Mine an attractor first!";
+        exportLog.style.color = "orange";
+        return;
+    }
+    if (isExporting) return;
+    if (typeof Mp4Muxer === 'undefined') {
+        exportLog.innerText = "❌ Error: mp4-muxer script missing from index.html";
+        exportLog.style.color = "red";
+        return;
+    }
+
+    try {
+        isExporting = true;
+        exportLog.innerText = "⏳ Initializing Encoder...";
+        exportLog.style.color = "#fff";
+        
+        const duration = parseFloat(document.getElementById('ui-vid-time').value) || 5;
+        const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
+        const totalFrames = Math.floor(duration * fps);
+        
+        // Hardware encoders strictly require even dimensions
+        const w = canvas.width - (canvas.width % 2);
+        const h = canvas.height - (canvas.height % 2);
+
+        let muxer = new Mp4Muxer.Muxer({
+            target: new Mp4Muxer.ArrayBufferTarget(),
+            video: { codec: 'avc', width: w, height: h },
+            fastStart: 'in-memory'
+        });
+
+        let videoEncoder = new VideoEncoder({
+            output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+            error: e => { 
+                console.error("VideoEncoder Error:", e); 
+                exportLog.innerText = "❌ Encoder Error!"; 
+                exportLog.style.color = "red";
+            }
+        });
+
+        videoEncoder.configure({
+            codec: 'avc1.640033', 
+            width: w,
+            height: h,
+            bitrate: 15_000_000, 
+            framerate: fps
+        });
+
+        const originalQuat = [...currentQuat];
+        
+        for (let i = 0; i < totalFrames; i++) {
+            exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames}`;
+            
+            const angle = (i / totalFrames) * Math.PI * 2;
+            const turnQuat = qFromAxisAngle([0, 1, 0], angle);
+            currentQuat = qMult(turnQuat, originalQuat); 
+            
+            renderFrame();
+            gl.finish(); 
+            
+            const timestamp = (i / fps) * 1_000_000; 
+            const frame = new VideoFrame(canvas, { timestamp, alpha: 'discard' });
+            
+            videoEncoder.encode(frame, { keyFrame: (i % fps === 0) });
+            frame.close();
+            
+            // Yield to browser to update UI
+            await new Promise(r => setTimeout(r, 0)); 
+        }
+
+        exportLog.innerText = "📦 Finalizing MP4...";
+        await videoEncoder.flush();
+        muxer.finalize();
+        
+        const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; 
+        a.download = `attractor_loop_${generateID()}.mp4`;
+        document.body.appendChild(a); 
+        a.click(); 
+        document.body.removeChild(a);
+        
+        currentQuat = originalQuat;
+        isExporting = false;
+        exportLog.innerText = "✅ Video Saved!";
+        exportLog.style.color = "#00ff00";
+        renderFrame();
+
+    } catch (err) {
+        console.error("Video Export Crash:", err);
+        exportLog.innerText = "❌ Crash: " + err.message;
+        exportLog.style.color = "red";
+        isExporting = false;
+    }
+};
 
 document.getElementById('ui-btn-power').onclick = () => {
     updatePowerUI();
@@ -2636,120 +2738,6 @@ async function startTiledExport(mode = 'download') {
                         constraints: meta.constraints 
                     });
                 });
-                
-btnVideo.onclick = async () => {
-    // 1. Explicitly grab the export UI element just in case the global reference dropped
-    const exportLog = document.getElementById('ui-export-status');
-    if (!exportLog) {
-        console.error("Could not find ui-export-status div!");
-        return;
-    }
-
-    // 2. Catch our early aborts and log them to the UI
-    if (!currentCoeffs) {
-        exportLog.innerText = "⚠️ Mine an attractor first before recording!";
-        exportLog.style.color = "orange";
-        return;
-    }
-    if (isExporting) {
-        exportLog.innerText = "⚠️ Already exporting...";
-        exportLog.style.color = "orange";
-        return;
-    }
-    if (typeof Mp4Muxer === 'undefined') {
-        exportLog.innerText = "❌ Error: mp4-muxer script missing from index.html";
-        exportLog.style.color = "red";
-        return;
-    }
-    if (typeof VideoEncoder === 'undefined') {
-        exportLog.innerText = "❌ Error: VideoEncoder not supported (Requires HTTPS or localhost)";
-        exportLog.style.color = "red";
-        return;
-    }
-
-    try {
-        isExporting = true;
-        exportLog.innerText = "⏳ Initializing Encoder...";
-        exportLog.style.color = "#fff";
-        
-        const duration = parseFloat(document.getElementById('ui-vid-time').value) || 5;
-        const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
-        const totalFrames = Math.floor(duration * fps);
-        
-        // Hardware encoders strictly require even dimensions
-        const w = canvas.width - (canvas.width % 2);
-        const h = canvas.height - (canvas.height % 2);
-
-        let muxer = new Mp4Muxer.Muxer({
-            target: new Mp4Muxer.ArrayBufferTarget(),
-            video: { codec: 'avc', width: w, height: h },
-            fastStart: 'in-memory'
-        });
-
-        let videoEncoder = new VideoEncoder({
-            output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-            error: e => { 
-                console.error("VideoEncoder Error:", e); 
-                exportLog.innerText = "❌ Encoder Error! Check Console."; 
-                exportLog.style.color = "red";
-            }
-        });
-
-        videoEncoder.configure({
-            codec: 'avc1.640033', 
-            width: w,
-            height: h,
-            bitrate: 15_000_000, 
-            framerate: fps
-        });
-
-        const originalQuat = [...currentQuat];
-        
-        for (let i = 0; i < totalFrames; i++) {
-            exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames}`;
-            
-            const angle = (i / totalFrames) * Math.PI * 2;
-            const turnQuat = qFromAxisAngle([0, 1, 0], angle);
-            currentQuat = qMult(turnQuat, originalQuat); 
-            
-            renderFrame();
-            gl.finish(); 
-            
-            const timestamp = (i / fps) * 1_000_000; 
-            const frame = new VideoFrame(canvas, { timestamp, alpha: 'discard' });
-            
-            videoEncoder.encode(frame, { keyFrame: (i % fps === 0) });
-            frame.close();
-            
-            await new Promise(r => setTimeout(r, 0)); 
-        }
-
-        exportLog.innerText = "📦 Finalizing MP4...";
-        await videoEncoder.flush();
-        muxer.finalize();
-        
-        const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; 
-        a.download = `attractor_loop_${generateID()}.mp4`;
-        document.body.appendChild(a); 
-        a.click(); 
-        document.body.removeChild(a);
-        
-        currentQuat = originalQuat;
-        isExporting = false;
-        exportLog.innerText = "✅ Video Saved!";
-        exportLog.style.color = "#00ff00";
-        renderFrame();
-
-    } catch (err) {
-        console.error("Video Export Crash:", err);
-        exportLog.innerText = "❌ Crash: " + err.message;
-        exportLog.style.color = "red";
-        isExporting = false;
-    }
-};
 
                 renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, exportPanX, exportPanY, exportZoom);
             }
