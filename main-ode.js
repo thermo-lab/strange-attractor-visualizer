@@ -2119,6 +2119,25 @@ btnVideo.onclick = async () => {
         resizeViewportFBO();
         if (guideCheckbox) guideCheckbox.checked = false;
 
+// --- NEW: SAFER CODEC & PRE-FLIGHT CHECK ---
+        const pixelCount = w * h;
+        const baseBitrate = (pixelCount / (1920 * 1080)) * 15000000;
+
+        // avc1.4d002a = H.264 Main Profile, Level 4.2 (Extremely high compatibility)
+        const videoConfig = {
+            codec: 'avc1.4d002a', 
+            width: w,
+            height: h,
+            bitrate: Math.floor(baseBitrate), 
+            framerate: fps
+        };
+
+        exportLog.innerText = "⏳ Verifying hardware support...";
+        const support = await VideoEncoder.isConfigSupported(videoConfig);
+        if (!support.supported) {
+            throw new Error(`Browser rejected video config: ${w}x${h} at ${fps}fps. Resolution or framerate may be too high for your hardware encoder.`);
+        }
+
         let muxer = new Mp4Muxer.Muxer({
             target: new Mp4Muxer.ArrayBufferTarget(),
             video: { codec: 'avc', width: w, height: h },
@@ -2128,33 +2147,12 @@ btnVideo.onclick = async () => {
         let videoEncoder = new VideoEncoder({
             output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
             error: e => { 
-                console.error("VideoEncoder Error:", e); 
-                exportLog.innerText = "❌ Encoder Error!"; 
-                exportLog.style.color = "red";
+                console.error("VideoEncoder internal error:", e); 
             }
         });
 
-        const pixelCount = w * h;
-        const baseBitrate = (pixelCount / (1920 * 1080)) * 15_000_000;
-
-        //videoEncoder.configure({
-        //    codec: 'avc1.640033', 
-        //    width: w,
-        //    height: h,
-        //    bitrate: Math.floor(baseBitrate), 
-        //    framerate: fps
-        //});
-
-videoEncoder.configure({
-            codec: 'avc1.640033', // H.264 High Profile
-            width: w,
-            height: h,
-            bitrate: Math.floor(baseBitrate), 
-            framerate: fps,
-            bitrateMode: 'variable', // 'constant' or 'variable'
-            hardwareAcceleration: 'prefer-software', // Force CPU for cleaner math rendering
-            latencyMode: 'quality' // Tells the encoder to prioritize looks over speed
-        });
+        videoEncoder.configure(videoConfig);
+        //const originalQuat = [...currentQuat];
         
         for (let i = 0; i < totalFrames; i++) {
             exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames} (${w}x${h})`;
@@ -2163,6 +2161,13 @@ videoEncoder.configure({
             const turnQuat = qFromAxisAngle([0, 1, 0], angle);
             currentQuat = qMult(turnQuat, originalQuat); 
             
+if (videoEncoder.state === 'closed') {
+                throw new Error("Encoder closed unexpectedly during render.");
+            }
+            
+            renderFrame();
+            gl.finish();
+
             renderFrame();
             gl.finish(); 
             
