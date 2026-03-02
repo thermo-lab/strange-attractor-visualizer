@@ -1846,8 +1846,7 @@ div.appendChild(createSection("EXPORT", `
         <input type="checkbox" id="ui-show-guide"> Show Print Crop Guide
     </label>
 
-    <div style="margin-bottom:5px; font-size:12px; color:#aaa;">Dimensions</div>
-    
+    <div style="margin-bottom:5px; font-size:12px; color:#aaa;">Image Export</div>
     <select id="ui-export-unit" style="width:100%; margin-bottom:10px; background:#333; color:#fff; border:1px solid #555;">
         <option value="inches">Inches (Print)</option>
         <option value="pixels">Pixels (Screen)</option>
@@ -1865,11 +1864,6 @@ div.appendChild(createSection("EXPORT", `
         </div>
     </div>
     
-    <label style="display:block; margin-bottom:10px; color:#aaa; font-size:11px; cursor:pointer;">
-        <input type="checkbox" id="ui-export-transparent"> Transparent Background
-    </label>
-
-<div style="margin-bottom:5px; font-size:12px; color:#aaa;">Quality</div>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <div style="flex:1">
             <span style="color:#0f0; font-size:10px;">DPI</span>
@@ -1880,13 +1874,30 @@ div.appendChild(createSection("EXPORT", `
             <input type="number" id="ui-print-passes" value="1" style="width:100%">
         </div>
     </div>
-
+    
     <label style="display:block; margin-bottom:10px; color:#aaa; font-size:11px; cursor:pointer;">
-        <input type="checkbox" id="ui-export-json"> Include JSON data (for loading later)
+        <input type="checkbox" id="ui-export-transparent"> Transparent Background
+    </label>
+    <label style="display:block; margin-bottom:10px; color:#aaa; font-size:11px; cursor:pointer;">
+        <input type="checkbox" id="ui-export-json"> Include JSON data
     </label>
 
-    <button id="ui-btn-snap" style="width:100%; background:#fff; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold; margin-bottom:5px;">📸 SNAPSHOT</button>
-    <button id="ui-btn-order" style="width:100%; background:#0f0; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold;">🛒 ORDER PRINT</button>
+    <button id="ui-btn-snap" style="width:100%; background:#fff; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold; margin-bottom:5px;">📸 HD SNAPSHOT</button>
+    <button id="ui-btn-order" style="width:100%; background:#0f0; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold; margin-bottom:15px;">🛒 ORDER PRINT</button>
+
+    <div style="margin-bottom:5px; font-size:12px; color:#aaa; border-top:1px solid #444; padding-top:10px;">Video Loop (Turntable)</div>
+    <div style="display:flex; gap:5px; margin-bottom:10px;">
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">Duration (s)</span>
+            <input type="number" id="ui-vid-time" value="5" style="width:100%">
+        </div>
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">FPS</span>
+            <input type="number" id="ui-vid-fps" value="60" style="width:100%">
+        </div>
+    </div>
+    <button id="ui-btn-video" style="width:100%; background:#0055ff; color:#fff; border:none; padding:10px; cursor:pointer; font-weight:bold;">🎥 RECORD MP4</button>
+
     <div id="ui-export-status" style="color:#fff; font-size:10px; margin-top:5px; text-align:center;"></div>
 `));
 
@@ -2039,6 +2050,7 @@ sliderGamma.oninput = (e) => { currentGamma = parseInt(e.target.value) / 10.0; }
 sliderSmooth.oninput = (e) => { currentNoise = parseInt(e.target.value) / 200.0; };
 btnSnap.onclick = () => { startTiledExport('download'); };
 btnOrder.onclick = () => { startTiledExport('pod'); };
+const btnVideo = document.getElementById('ui-btn-video');
 
 document.getElementById('ui-btn-power').onclick = () => {
     updatePowerUI();
@@ -2625,6 +2637,90 @@ async function startTiledExport(mode = 'download') {
                     });
                 });
                 
+btnVideo.onclick = async () => {
+    if (typeof Mp4Muxer === 'undefined') {
+        uiExport.innerText = "Error: mp4-muxer library missing from index.html";
+        return;
+    }
+    if (isExporting || !currentCoeffs) return;
+    isExporting = true;
+    
+    const duration = parseFloat(document.getElementById('ui-vid-time').value) || 5;
+    const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
+    const totalFrames = Math.floor(duration * fps);
+    
+    // Hardware encoders strictly require even dimensions
+    const w = canvas.width - (canvas.width % 2);
+    const h = canvas.height - (canvas.height % 2);
+
+    uiExport.innerText = "Initializing Encoder...";
+
+    let muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: { codec: 'avc', width: w, height: h },
+        fastStart: 'in-memory'
+    });
+
+    let videoEncoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: e => { console.error(e); uiExport.innerText = "Encoder Error!"; }
+    });
+
+    // High profile H.264, level 5.1 (Supports 1080p 60fps easily)
+    videoEncoder.configure({
+        codec: 'avc1.640033', 
+        width: w,
+        height: h,
+        bitrate: 15_000_000, // 15 Mbps for crisp particles
+        framerate: fps
+    });
+
+    const originalQuat = [...currentQuat];
+    
+    for (let i = 0; i < totalFrames; i++) {
+        uiExport.innerText = `Rendering Video: Frame ${i+1} / ${totalFrames}`;
+        
+        // Calculate the exact quaternion for this frame (1 full orbit over the duration)
+        const angle = (i / totalFrames) * Math.PI * 2;
+        const turnQuat = qFromAxisAngle([0, 1, 0], angle);
+        
+        // Multiply turnQuat by originalQuat to orbit around the GLOBAL Y-axis
+        currentQuat = qMult(turnQuat, originalQuat); 
+        
+        renderFrame();
+        gl.finish(); // Force GPU to finish drawing the frame
+        
+        const timestamp = (i / fps) * 1_000_000; // WebCodecs uses microseconds
+        const frame = new VideoFrame(canvas, { timestamp, alpha: 'discard' });
+        
+        // Drop a keyframe every 1 second
+        videoEncoder.encode(frame, { keyFrame: (i % fps === 0) });
+        frame.close();
+        
+        // Yield to the UI thread so the browser doesn't freeze
+        await new Promise(r => setTimeout(r, 0)); 
+    }
+
+    uiExport.innerText = "Finalizing MP4...";
+    await videoEncoder.flush();
+    muxer.finalize();
+    
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; 
+    a.download = `attractor_loop_${generateID()}.mp4`;
+    document.body.appendChild(a); 
+    a.click(); 
+    document.body.removeChild(a);
+    
+    // Restore the user's camera view
+    currentQuat = originalQuat;
+    isExporting = false;
+    uiExport.innerText = "Video Saved!";
+    renderFrame();
+};
+
                 renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, exportPanX, exportPanY, exportZoom);
             }
             
