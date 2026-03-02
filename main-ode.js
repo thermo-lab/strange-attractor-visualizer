@@ -2077,7 +2077,6 @@ btnVideo.onclick = async () => {
         const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
         const totalFrames = Math.floor(duration * fps);
         
-        // --- NEW: DIMENSION & CROP GUIDE OVERRIDES ---
         let targetW = canvas.width;
         let targetH = canvas.height;
         
@@ -2090,11 +2089,29 @@ btnVideo.onclick = async () => {
         const w = targetW - (targetW % 2);
         const h = targetH - (targetH % 2);
 
-        // Save original state so we can restore it silently later
+        // --- NEW: SAVE ALL ORIGINAL STATES ---
         const origW = canvas.width;
         const origH = canvas.height;
+        const originalZoom = camZoom;
+        const originalPanX = camPanX;
+        const originalPanY = camPanY;
+        const originalQuat = [...currentQuat];
+        
         const guideCheckbox = document.getElementById('ui-show-guide');
         const wasGuideOn = guideCheckbox ? guideCheckbox.checked : false;
+
+        // --- NEW: FRAMING COMPENSATION (CONTAIN) ---
+        const screenAspect = origW / origH;
+        const exportAspect = w / h;
+
+        // If the video is "squarer" than the screen, WebGL naturally expands the geometry horizontally.
+        // We counteract this by zooming out to keep it safely contained within the frame!
+        if (exportAspect < screenAspect) {
+            const framingRatio = exportAspect / screenAspect;
+            camZoom *= framingRatio;
+            camPanX *= framingRatio;
+            camPanY *= framingRatio;
+        }
 
         // Apply export state (forces WebGL into the new resolution)
         canvas.width = w;
@@ -2117,8 +2134,6 @@ btnVideo.onclick = async () => {
             }
         });
 
-        // --- NEW: DYNAMIC BITRATE SCALING ---
-        // 1920x1080 @ 60fps = ~15Mbps. This scales it automatically for 4K, 720p, etc.
         const pixelCount = w * h;
         const baseBitrate = (pixelCount / (1920 * 1080)) * 15_000_000;
 
@@ -2129,8 +2144,6 @@ btnVideo.onclick = async () => {
             bitrate: Math.floor(baseBitrate), 
             framerate: fps
         });
-
-        const originalQuat = [...currentQuat];
         
         for (let i = 0; i < totalFrames; i++) {
             exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames} (${w}x${h})`;
@@ -2165,12 +2178,16 @@ btnVideo.onclick = async () => {
         a.click(); 
         document.body.removeChild(a);
         
-        // --- RESTORE ORIGINAL STATE ---
+        // --- RESTORE ALL ORIGINAL STATES ---
         canvas.width = origW;
         canvas.height = origH;
+        camZoom = originalZoom;
+        camPanX = originalPanX;
+        camPanY = originalPanY;
+        currentQuat = originalQuat;
+        
         resizeViewportFBO();
         if (guideCheckbox) guideCheckbox.checked = wasGuideOn;
-        currentQuat = originalQuat;
         isExporting = false;
         exportLog.innerText = "✅ Video Saved!";
         exportLog.style.color = "#00ff00";
