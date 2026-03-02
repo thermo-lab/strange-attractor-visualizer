@@ -2638,87 +2638,117 @@ async function startTiledExport(mode = 'download') {
                 });
                 
 btnVideo.onclick = async () => {
-    if (typeof Mp4Muxer === 'undefined') {
-        uiExport.innerText = "Error: mp4-muxer library missing from index.html";
+    // 1. Explicitly grab the export UI element just in case the global reference dropped
+    const exportLog = document.getElementById('ui-export-status');
+    if (!exportLog) {
+        console.error("Could not find ui-export-status div!");
         return;
     }
-    if (isExporting || !currentCoeffs) return;
-    isExporting = true;
-    
-    const duration = parseFloat(document.getElementById('ui-vid-time').value) || 5;
-    const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
-    const totalFrames = Math.floor(duration * fps);
-    
-    // Hardware encoders strictly require even dimensions
-    const w = canvas.width - (canvas.width % 2);
-    const h = canvas.height - (canvas.height % 2);
 
-    uiExport.innerText = "Initializing Encoder...";
-
-    let muxer = new Mp4Muxer.Muxer({
-        target: new Mp4Muxer.ArrayBufferTarget(),
-        video: { codec: 'avc', width: w, height: h },
-        fastStart: 'in-memory'
-    });
-
-    let videoEncoder = new VideoEncoder({
-        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-        error: e => { console.error(e); uiExport.innerText = "Encoder Error!"; }
-    });
-
-    // High profile H.264, level 5.1 (Supports 1080p 60fps easily)
-    videoEncoder.configure({
-        codec: 'avc1.640033', 
-        width: w,
-        height: h,
-        bitrate: 15_000_000, // 15 Mbps for crisp particles
-        framerate: fps
-    });
-
-    const originalQuat = [...currentQuat];
-    
-    for (let i = 0; i < totalFrames; i++) {
-        uiExport.innerText = `Rendering Video: Frame ${i+1} / ${totalFrames}`;
-        
-        // Calculate the exact quaternion for this frame (1 full orbit over the duration)
-        const angle = (i / totalFrames) * Math.PI * 2;
-        const turnQuat = qFromAxisAngle([0, 1, 0], angle);
-        
-        // Multiply turnQuat by originalQuat to orbit around the GLOBAL Y-axis
-        currentQuat = qMult(turnQuat, originalQuat); 
-        
-        renderFrame();
-        gl.finish(); // Force GPU to finish drawing the frame
-        
-        const timestamp = (i / fps) * 1_000_000; // WebCodecs uses microseconds
-        const frame = new VideoFrame(canvas, { timestamp, alpha: 'discard' });
-        
-        // Drop a keyframe every 1 second
-        videoEncoder.encode(frame, { keyFrame: (i % fps === 0) });
-        frame.close();
-        
-        // Yield to the UI thread so the browser doesn't freeze
-        await new Promise(r => setTimeout(r, 0)); 
+    // 2. Catch our early aborts and log them to the UI
+    if (!currentCoeffs) {
+        exportLog.innerText = "⚠️ Mine an attractor first before recording!";
+        exportLog.style.color = "orange";
+        return;
+    }
+    if (isExporting) {
+        exportLog.innerText = "⚠️ Already exporting...";
+        exportLog.style.color = "orange";
+        return;
+    }
+    if (typeof Mp4Muxer === 'undefined') {
+        exportLog.innerText = "❌ Error: mp4-muxer script missing from index.html";
+        exportLog.style.color = "red";
+        return;
+    }
+    if (typeof VideoEncoder === 'undefined') {
+        exportLog.innerText = "❌ Error: VideoEncoder not supported (Requires HTTPS or localhost)";
+        exportLog.style.color = "red";
+        return;
     }
 
-    uiExport.innerText = "Finalizing MP4...";
-    await videoEncoder.flush();
-    muxer.finalize();
-    
-    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; 
-    a.download = `attractor_loop_${generateID()}.mp4`;
-    document.body.appendChild(a); 
-    a.click(); 
-    document.body.removeChild(a);
-    
-    // Restore the user's camera view
-    currentQuat = originalQuat;
-    isExporting = false;
-    uiExport.innerText = "Video Saved!";
-    renderFrame();
+    try {
+        isExporting = true;
+        exportLog.innerText = "⏳ Initializing Encoder...";
+        exportLog.style.color = "#fff";
+        
+        const duration = parseFloat(document.getElementById('ui-vid-time').value) || 5;
+        const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
+        const totalFrames = Math.floor(duration * fps);
+        
+        // Hardware encoders strictly require even dimensions
+        const w = canvas.width - (canvas.width % 2);
+        const h = canvas.height - (canvas.height % 2);
+
+        let muxer = new Mp4Muxer.Muxer({
+            target: new Mp4Muxer.ArrayBufferTarget(),
+            video: { codec: 'avc', width: w, height: h },
+            fastStart: 'in-memory'
+        });
+
+        let videoEncoder = new VideoEncoder({
+            output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+            error: e => { 
+                console.error("VideoEncoder Error:", e); 
+                exportLog.innerText = "❌ Encoder Error! Check Console."; 
+                exportLog.style.color = "red";
+            }
+        });
+
+        videoEncoder.configure({
+            codec: 'avc1.640033', 
+            width: w,
+            height: h,
+            bitrate: 15_000_000, 
+            framerate: fps
+        });
+
+        const originalQuat = [...currentQuat];
+        
+        for (let i = 0; i < totalFrames; i++) {
+            exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames}`;
+            
+            const angle = (i / totalFrames) * Math.PI * 2;
+            const turnQuat = qFromAxisAngle([0, 1, 0], angle);
+            currentQuat = qMult(turnQuat, originalQuat); 
+            
+            renderFrame();
+            gl.finish(); 
+            
+            const timestamp = (i / fps) * 1_000_000; 
+            const frame = new VideoFrame(canvas, { timestamp, alpha: 'discard' });
+            
+            videoEncoder.encode(frame, { keyFrame: (i % fps === 0) });
+            frame.close();
+            
+            await new Promise(r => setTimeout(r, 0)); 
+        }
+
+        exportLog.innerText = "📦 Finalizing MP4...";
+        await videoEncoder.flush();
+        muxer.finalize();
+        
+        const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; 
+        a.download = `attractor_loop_${generateID()}.mp4`;
+        document.body.appendChild(a); 
+        a.click(); 
+        document.body.removeChild(a);
+        
+        currentQuat = originalQuat;
+        isExporting = false;
+        exportLog.innerText = "✅ Video Saved!";
+        exportLog.style.color = "#00ff00";
+        renderFrame();
+
+    } catch (err) {
+        console.error("Video Export Crash:", err);
+        exportLog.innerText = "❌ Crash: " + err.message;
+        exportLog.style.color = "red";
+        isExporting = false;
+    }
 };
 
                 renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, exportPanX, exportPanY, exportZoom);
