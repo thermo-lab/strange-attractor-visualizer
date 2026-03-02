@@ -2051,7 +2051,6 @@ sliderGamma.oninput = (e) => { currentGamma = parseInt(e.target.value) / 10.0; }
 sliderSmooth.oninput = (e) => { currentNoise = parseInt(e.target.value) / 200.0; };
 btnSnap.onclick = () => { startTiledExport('download'); };
 btnOrder.onclick = () => { startTiledExport('pod'); };
-const btnVideo = document.getElementById('ui-btn-video');
 
 btnVideo.onclick = async () => {
     const exportLog = document.getElementById('ui-export-status');
