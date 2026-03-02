@@ -2100,13 +2100,13 @@ btnVideo.onclick = async () => {
         const guideCheckbox = document.getElementById('ui-show-guide');
         const wasGuideOn = guideCheckbox ? guideCheckbox.checked : false;
 
-        // --- NEW: FRAMING COMPENSATION (CONTAIN) ---
+// --- FIXED: FRAMING COMPENSATION (CONTAIN) ---
         const screenAspect = origW / origH;
         const exportAspect = w / h;
 
-        // If the video is "squarer" than the screen, WebGL naturally expands the geometry horizontally.
-        // We counteract this by zooming out to keep it safely contained within the frame!
-        if (exportAspect < screenAspect) {
+        // ONLY apply compensation if the export target is WIDER than your current screen.
+        // If it's narrower (like a square on a widescreen monitor), WebGL's native Y-lock handles it perfectly.
+        if (exportAspect > screenAspect) {
             const framingRatio = exportAspect / screenAspect;
             camZoom *= framingRatio;
             camPanX *= framingRatio;
