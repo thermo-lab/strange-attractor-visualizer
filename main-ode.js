@@ -2137,12 +2137,23 @@ btnVideo.onclick = async () => {
         const pixelCount = w * h;
         const baseBitrate = (pixelCount / (1920 * 1080)) * 15_000_000;
 
-        videoEncoder.configure({
-            codec: 'avc1.640033', 
+        //videoEncoder.configure({
+        //    codec: 'avc1.640033', 
+        //    width: w,
+        //    height: h,
+        //    bitrate: Math.floor(baseBitrate), 
+        //    framerate: fps
+        //});
+
+videoEncoder.configure({
+            codec: 'avc1.640033', // H.264 High Profile
             width: w,
             height: h,
             bitrate: Math.floor(baseBitrate), 
-            framerate: fps
+            framerate: fps,
+            bitrateMode: 'variable', // 'constant' or 'variable'
+            hardwareAcceleration: 'prefer-software', // Force CPU for cleaner math rendering
+            latencyMode: 'quality' // Tells the encoder to prioritize looks over speed
         });
         
         for (let i = 0; i < totalFrames; i++) {
