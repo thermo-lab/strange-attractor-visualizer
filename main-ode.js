@@ -1387,10 +1387,17 @@ function buildTuneUI() {
     const container = document.getElementById('ui-tune-container');
     if (!container) return;
 
-    // --- NEW: SPECIAL 30-SLIDER POLY MODE ---
+    // --- SPECIAL 30-SLIDER POLY MODE (Collapsible) ---
     if (currentGenType === 'poly' && currentCoeffs && currentCoeffs.length >= 30) {
         container.style.display = 'block';
-        let html = '<div style="color:#ff00ff; font-weight:bold; margin-bottom:5px; font-size:12px;">30-DIMENSIONAL TUNING</div>';
+
+        // Defaults to CLOSED (display:none) to save sidebar space
+        let html = `
+            <div id="ui-tune-header" style="cursor:pointer; color:#ff00ff; font-weight:bold; margin-bottom:5px; font-size:12px; user-select:none;">
+                ▶ 30-DIMENSIONAL TUNING
+            </div>
+            <div id="ui-tune-body" style="display:none;">
+        `;
 
         const terms = ['Const', 'x', 'y', 'z', 'x²', 'y²', 'z²', 'xy', 'xz', 'yz'];
 
@@ -1400,7 +1407,6 @@ function buildTuneUI() {
             const name = `${axis} (${term})`;
             const val = currentCoeffs[i];
 
-            // Limit sliders to a tight +/- 0.5 range so they don't instantly explode the math
             const min = val - 0.5;
             const max = val + 0.5;
             const step = 0.001;
@@ -1414,7 +1420,16 @@ function buildTuneUI() {
             `;
         }
 
+        html += `</div>`; // Close the collapsible body
         container.innerHTML = html;
+
+        // Toggle logic for Polynomial
+        document.getElementById('ui-tune-header').onclick = function() {
+            const body = document.getElementById('ui-tune-body');
+            const isClosed = body.style.display === 'none';
+            body.style.display = isClosed ? 'block' : 'none';
+            this.innerText = (isClosed ? '▼' : '▶') + ' 30-DIMENSIONAL TUNING';
+        };
 
         for(let i=0; i<30; i++) {
             const slider = document.getElementById(`tune-slider-${i}`);
@@ -1442,7 +1457,14 @@ function buildTuneUI() {
     }
 
     container.style.display = 'block';
-    let html = '<div style="color:#ff00ff; font-weight:bold; margin-bottom:5px; font-size:12px;">LIVE TUNING</div>';
+
+    // Defaults to OPEN (display:block) since there are only a few sliders
+    let html = `
+        <div id="ui-tune-header" style="cursor:pointer; color:#ff00ff; font-weight:bold; margin-bottom:5px; font-size:12px; user-select:none;">
+            ▼ LIVE TUNING
+        </div>
+        <div id="ui-tune-body" style="display:block;">
+    `;
 
     defs.params.forEach((p) => {
         if (p.idx < 0) return; // Skip global range modifiers
@@ -1461,7 +1483,16 @@ function buildTuneUI() {
         `;
     });
 
+    html += `</div>`; // Close the collapsible body
     container.innerHTML = html;
+
+    // Toggle logic for Standard Params
+    document.getElementById('ui-tune-header').onclick = function() {
+        const body = document.getElementById('ui-tune-body');
+        const isClosed = body.style.display === 'none';
+        body.style.display = isClosed ? 'block' : 'none';
+        this.innerText = (isClosed ? '▼' : '▶') + ' LIVE TUNING';
+    };
 
     defs.params.forEach((p) => {
         if (p.idx < 0) return;
