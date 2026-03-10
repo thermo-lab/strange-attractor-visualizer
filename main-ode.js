@@ -5,43 +5,32 @@
    - Mobile-Responsive UI (Sidebar vs Bottom Drawer)
    - High-DPI / Retina Display Support
    - 16-Bit Float Integration
-   - Auto-Matching JSON/PNG Export
+   - Auto-Matching JSON/PNG/MP4 Export
    - Multi-Engine: Poly, Symmetric, Dadras, Thomas, Aizawa, Rikitake, Chua, Moore-Spiegel, Lorenz, Halvorsen, Halvorsen (Gen), Clifford Map
    - Power User Mode: Dynamic Search Bounds & Delta-Time control
+   - Live Tuning: Real-time parameter sculpting
+   - MP4 Export: Deterministic hardware-accelerated WebCodecs turntable loop
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
 // ==========================================
 // 0. CONSTANTS & GLOBAL STATE
 // ==========================================
-const MAX_ALLOCATION = 50000000; 
+const MAX_ALLOCATION = 50000000;
 
 // --- POD CONFIG ---
-const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec"; 
-const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL"; 
-
-// --- FORCE SECURE CONTEXT (MIXED CONTENT FIX FOR PEECHO) ---
-// Uncomment this before pushing to live/GitHub Pages. 
-// Leave commented for local MAMP Pro testing to avoid SSL blocking.
-/*
-if (!document.querySelector('meta[http-equiv="Content-Security-Policy"]')) {
-    const metaCSP = document.createElement('meta');
-    metaCSP.setAttribute('http-equiv', 'Content-Security-Policy');
-    metaCSP.setAttribute('content', 'upgrade-insecure-requests');
-    document.head.appendChild(metaCSP);
-}
-*/
+const POD_API_URL = "https://script.google.com/macros/s/AKfycbyy2EWZpZ_LofW4JVHesxmaRq5LgPGrlEfKC49U2mVdujPhA0rr2XKqwlrn-vbFR7rt/exec";
+const RECAPTCHA_SITE_KEY = "6Le8WWgsAAAAADEo9EQKpu_ZMaGaN0PHcCw0y4cL";
 
 // --- DETECT MOBILE ---
 const isMobile = window.matchMedia("(max-width: 768px)").matches;
 
 // --- GENERATOR DEFINITIONS (METADATA) ---
-// This acts as the single source of truth for the entire engine.
 const GEN_DEFS = {
-    clifford_map: { 
-        label: "Clifford Map (3D Discrete)", 
+    clifford_map: {
+        label: "Clifford Map (3D Discrete)",
         isMap: true, dt: 0.015,
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.06,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.6,
         voxRes: 0.1, minL: 0.0015, minVol: 45, minWidth: 0.5,
         boundsLimit: 300,
         params: [
@@ -49,50 +38,50 @@ const GEN_DEFS = {
             { name: "b", idx: 1, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
             { name: "c", idx: 2, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 },
             { name: "d", idx: 3, min: -6, max: 6, valMin: -3.0, valMax: 3.0, defMin: -3.0, defMax: 3.0 }
-        ] 
+        ]
     },
-    lorenz: { 
-        label: "Lorenz", isMap: false, dt: 0.005, 
-        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 0.1,
+    lorenz: {
+        label: "Lorenz", isMap: false, dt: 0.005,
+        startX: 0.1, startY: 0.1, startZ: 0.1, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
             { name: "σ (Sigma)", idx: 0, min: 0, max: 20, valMin: 9.0, valMax: 11.0, defMin: 9.0, defMax: 11.0 },
             { name: "ρ (Rho)", idx: 1, min: 0, max: 40, valMin: 27.0, valMax: 29.0, defMin: 27.0, defMax: 29.0 },
             { name: "β (Beta)", idx: 2, min: 0, max: 5, valMin: 2.5, valMax: 2.8, defMin: 2.5, defMax: 2.8 }
-        ] 
+        ]
     },
-    halvorsen: { 
-        label: "Halvorsen", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
+    halvorsen: {
+        label: "Halvorsen", isMap: false, dt: 0.005,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
             { name: "a (Friction)", idx: 0, min: 0.0, max: 5.0, valMin: 0.1, valMax: 2.0, defMin: 0.1, defMax: 2.0 }
-        ] 
+        ]
     },
-    halvorsen_gen: { 
-        label: "Halvorsen (Generalized)", isMap: false, dt: 0.005, 
-        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
+    halvorsen_gen: {
+        label: "Halvorsen (Generalized)", isMap: false, dt: 0.005,
+        startX: 1.0, startY: 0.0, startZ: 0.0, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
             { name: "a", idx: 0, min: 0.0, max: 5, valMin: 1.8, valMax: 2.0, defMin: 1.8, defMax: 2.0 },
-            { name: "b", idx: 1, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, 
-            { name: "c", idx: 2, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 }, 
-            { name: "d", idx: 3, min: 0, max: 5, valMin: 0.5, valMax: 1.5, defMin: 0.5, defMax: 1.5 }  
-        ] 
+            { name: "b", idx: 1, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 },
+            { name: "c", idx: 2, min: 0, max: 10, valMin: 3.0, valMax: 5.0, defMin: 3.0, defMax: 5.0 },
+            { name: "d", idx: 3, min: 0, max: 5, valMin: 0.5, valMax: 1.5, defMin: 0.5, defMax: 1.5 }
+        ]
     },
-    poly: { 
-        label: "Polynomial", isMap: false, dt: 0.05, 
-        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 0.1,
+    poly: {
+        label: "Polynomial", isMap: false, dt: 0.05,
+        startX: 0.05, startY: 0.05, startZ: 0.05, scaleTarget: 1.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
-        params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }] 
+        params: [{ name: "Global Range (+/-)", idx: -1, min: 0.1, max: 5.0, valMin: 1.2, valMax: 1.2, defMin: 1.2, defMax: 1.2 }]
     },
-    rikitake: { 
+    rikitake: {
         label: "Rikitake", isMap: false, dt: 0.015,
-        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 0.05,
+        startX: 1.0, startY: 0.0, startZ: 1.0, scaleTarget: 2.0,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -102,7 +91,7 @@ const GEN_DEFS = {
     },
     chua: {
         label: "Chua", isMap: false, dt: 0.015,
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.2,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -114,7 +103,7 @@ const GEN_DEFS = {
     },
     moore: {
         label: "Moore-Spiegel", isMap: false, dt: 0.0002,
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.08,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.8,
         voxRes: 0.5, minL: 0.002, minVol: 50, minWidth: 2.0,
         boundsLimit: 300, settleSteps: 5000,
         params: [
@@ -122,9 +111,9 @@ const GEN_DEFS = {
             { name: "R (Reynolds)", idx: 1, min: 0, max: 200, valMin: 80.0, valMax: 120.0, defMin: 80.0, defMax: 120.0 }
         ]
     },
-    dadras: { 
-        label: "Dadras", isMap: false, dt: 0.015, 
-        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.035,
+    dadras: {
+        label: "Dadras", isMap: false, dt: 0.015,
+        startX: 1.1, startY: 2.1, startZ: -1.5, scaleTarget: 0.35,
         voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0,
         boundsLimit: 300,
         params: [
@@ -133,20 +122,20 @@ const GEN_DEFS = {
             { name: "ρ (Rho)", idx: 2, min: 0, max: 5, valMin: 1.5, valMax: 2.5, defMin: 1.5, defMax: 2.5 },
             { name: "β (Beta)", idx: 3, min: 0, max: 5, valMin: 1.5, valMax: 2.5, defMin: 1.5, defMax: 2.5 },
             { name: "γ (Gamma)", idx: 4, min: 5, max: 15, valMin: 8.0, valMax: 10.0, defMin: 8.0, defMax: 10.0 }
-        ] 
+        ]
     },
-    thomas: { 
-        label: "Thomas", isMap: false, dt: 0.05, 
-        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
+    thomas: {
+        label: "Thomas", isMap: false, dt: 0.05,
+        startX: 0.0, startY: 0.0, startZ: 0.0, scaleTarget: 0.5,
         voxRes: 0.2, minL: 0.001, minVol: 25, minWidth: 0.5,
         boundsLimit: 300, settleSteps: 5000, randomStartRange: 3.0,
         params: [
             { name: "b (Dissipation)", idx: 0, min: 0, max: 0.4, valMin: 0.18, valMax: 0.22, defMin: 0.18, defMax: 0.22 }
-        ] 
+        ]
     },
-    aizawa: { 
-        label: "Aizawa", isMap: false, dt: 0.01, 
-        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.1,
+    aizawa: {
+        label: "Aizawa", isMap: false, dt: 0.01,
+        startX: 0.1, startY: 0.0, startZ: 0.0, scaleTarget: 0.6,
         voxRes: 0.1, minL: 0.0001, minVol: 30, minWidth: 0.5,
         boundsLimit: 300,
         params: [
@@ -156,9 +145,9 @@ const GEN_DEFS = {
             { name: "δ (Delta)", idx: 3, min: 0, max: 5, valMin: 3.25, valMax: 3.75, defMin: 3.25, defMax: 3.75 },
             { name: "β (Beta)", idx: 4, min: 0, max: 1, valMin: 0.20, valMax: 0.30, defMin: 0.20, defMax: 0.30 },
             { name: "ζ (Zeta)", idx: 5, min: 0, max: 0.5, valMin: 0.075, valMax: 0.125, defMin: 0.075, defMax: 0.125 }
-        ] 
+        ]
     },
-    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 0.1, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, boundsLimit: 300, params: [] }
+    sym: { label: "Symmetric", isMap: false, dt: 0.015, startX: 0.1, startY: 0.0, startZ: -0.1, scaleTarget: 1.0, voxRes: 0.5, minL: 0.001, minVol: 25, minWidth: 1.0, boundsLimit: 300, params: [] }
 };
 
 // --- GLOBAL STATE VARIABLES ---
@@ -167,42 +156,42 @@ let gpuRenderedDensity = 1.0;
 let gaussianTex = null;
 let currentConstraints = null;
 
-let camZoom = 2.0; 
+let camZoom = 2.0;
 let camPanX = 0, camPanY = 0;
-let currentQuat = [0, 0, 0, 1]; 
+let currentQuat = [0, 0, 0, 1];
 let currentCoeffs = null;
 let currentGenType = 'poly';
 let colorMode = 0;
 let colorSeed = [0.0, 0.0, 0.0];
 
-let blendMode = 'ADD';        
-let isInverted = false;      
+let blendMode = 'ADD';
+let isInverted = false;
 let incBlack = true;
 let incWhite = true;
 
-let bgA = [0.0, 0.0, 0.0];    
-let bgB = [0.1, 0.1, 0.1];    
-let bgParams = [0.0, 0.5, 1.0]; 
+let bgA = [0.0, 0.0, 0.0];
+let bgB = [0.1, 0.1, 0.1];
+let bgParams = [0.0, 0.5, 1.0];
 
-let currentPhysicsSteps = 200000; 
-let currentOpacity = 0.03;
-let currentIntensity = 1.0;
+let currentPhysicsSteps = 200000;
+let currentOpacity = 0.06;
+let currentIntensity = 2.0;
 let currentGamma = 1.8;
-let currentNoise = 0.05;      
+let currentNoise = 0.05;
 let currentPointSize = 1.0;
 let currentDensity = 12;
 let currentJitter = 0.5;
 let currentVariation = 0.0;
-let isExporting = false; 
+let isExporting = false;
 
-let exportUnit = 'inches'; 
-let exportTransparent = false; 
+let exportUnit = 'inches';
+let exportTransparent = false;
 
 if (isMobile) {
-    currentPhysicsSteps = 200000; 
-    currentPointSize = 2.5;       
-    camZoom = 1.5;                
-    currentDensity = 12;           
+    currentPhysicsSteps = 200000;
+    currentPointSize = 2.5;
+    camZoom = 1.5;
+    currentDensity = 12;
 }
 
 let viewFbo = null;
@@ -210,13 +199,12 @@ let viewTex = null;
 
 let isDragging = false;
 let isPanning = false;
-let isRolling = false; 
+let isRolling = false;
 let lastX = 0, lastY = 0;
 let lastDist = 0;
 let lastAngle = 0;
-let renderScale = 1.0;      
-let isInteracting = false; 
-let pendingResize = false; 
+let renderScale = 1.0;
+let isInteracting = false;
 
 // ==========================================
 // 1. THE WORKER (INTERPOLATION ENGINE)
@@ -289,8 +277,8 @@ const workerCode = `
             const defs = GEN_DEFS[genType];
             const hasParams = defs && defs.params && defs.params.length > 0;
             
-// 1. DYNAMIC ARRAY SIZING
-            let arraySize = 30; // Fallback
+            // 1. DYNAMIC ARRAY SIZING
+            let arraySize = 30; // Default for Poly
             if (genType === 'poly') {
                 arraySize = 30;
             } else if (genType === 'sym') {
@@ -366,11 +354,10 @@ const workerCode = `
                 const pDef = defs.params.find(p => p.idx === idx);
                 if (pDef) {
                     const range = pDef.defMax - pDef.defMin;
-                    // If range is 0 (like our hidden constants), this skips mutation!
+                    // If range is 0 (like hidden constants), this skips mutation
                     if (range > 0) {
                         child[idx] += (Math.random() - 0.5) * (range * 0.05); 
                     } else {
-                        // Force a re-roll of the index so we don't waste an attempt mutating a constant
                         continue; 
                     }
                 }
@@ -1114,7 +1101,7 @@ function createShader(gl, type, source) {
 }
 
 function createGaussianTexture() {
-    const size = 64; 
+    const size = 64;
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
@@ -1123,9 +1110,9 @@ function createGaussianTexture() {
     const cx = size / 2;
     const cy = size / 2;
     const radius = size / 2;
-    
+
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); 
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
     grad.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
     grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
     grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
@@ -1136,12 +1123,12 @@ function createGaussianTexture() {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    
+
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    
+
     return tex;
 }
 
@@ -1182,10 +1169,10 @@ gl.vertexAttribPointer(curvLoc, 1, gl.FLOAT, false, 8, 4);
 function resizeViewportFBO() {
     if (viewFbo) gl.deleteFramebuffer(viewFbo);
     if (viewTex) gl.deleteTexture(viewTex);
-    
+
     viewFbo = gl.createFramebuffer();
     viewTex = gl.createTexture();
-    
+
     const w = Math.floor(canvas.width * renderScale);
     const h = Math.floor(canvas.height * renderScale);
 
@@ -1198,7 +1185,7 @@ function resizeViewportFBO() {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, viewFbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, viewTex, 0);
-    
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
@@ -1239,13 +1226,13 @@ function serializeState() {
         timestamp: Date.now(),
         genType: currentGenType,
         camera: { zoom: camZoom, panX: camPanX, panY: camPanY, quat: Array.from(currentQuat) },
-        colors: { 
-            mode: colorMode, 
-            seed: Array.from(colorSeed), 
-            blend: blendMode, 
-            invert: isInverted, 
-            black: incBlack, 
-            white: incWhite 
+        colors: {
+            mode: colorMode,
+            seed: Array.from(colorSeed),
+            blend: blendMode,
+            invert: isInverted,
+            black: incBlack,
+            white: incWhite
         },
         background: { a: Array.from(bgA), b: Array.from(bgB), params: Array.from(bgParams) },
         render: {
@@ -1265,8 +1252,8 @@ function serializeState() {
             span: document.getElementById('ui-focus-span').value
         },
         export: {
-            unit: exportUnit, 
-            transparent: exportTransparent, 
+            unit: exportUnit,
+            transparent: exportTransparent,
             width: document.getElementById('ui-print-w').value,
             height: document.getElementById('ui-print-h').value,
             dpi: document.getElementById('ui-print-dpi').value,
@@ -1277,15 +1264,15 @@ function serializeState() {
 
 function applyState(data) {
     if (!data) return;
-    
+
     if (data.settings) {
         const s = data.settings;
-        
+
         if(s.genType) currentGenType = s.genType;
         if(s.camera) { camZoom = s.camera.zoom; camPanX = s.camera.panX; camPanY = s.camera.panY; currentQuat = s.camera.quat; }
-        if(s.colors) { 
-            colorMode = s.colors.mode; colorSeed = s.colors.seed; blendMode = s.colors.blend; 
-            isInverted = (blendMode === 'NORMAL'); 
+        if(s.colors) {
+            colorMode = s.colors.mode; colorSeed = s.colors.seed; blendMode = s.colors.blend;
+            isInverted = (blendMode === 'NORMAL');
             incBlack = s.colors.black; incWhite = s.colors.white;
         }
         if(s.background) { bgA = s.background.a; bgB = s.background.b; bgParams = s.background.params; }
@@ -1304,10 +1291,10 @@ function applyState(data) {
         if (s.export) {
             const ex = s.export;
             exportUnit = ex.unit || 'inches';
-            exportTransparent = ex.transparent || false; 
+            exportTransparent = ex.transparent || false;
             document.getElementById('ui-export-unit').value = exportUnit;
             document.getElementById('ui-export-transparent').checked = exportTransparent;
-            
+
             const labelW = document.getElementById('ui-label-w');
             const labelH = document.getElementById('ui-label-h');
             if(exportUnit === 'pixels') {
@@ -1325,7 +1312,7 @@ function applyState(data) {
     } else {
         camZoom = 2.0; camPanX=0; camPanY=0; currentQuat=qIdentity();
     }
-    
+
     selectGenType.value = currentGenType;
     selectBlend.value = blendMode;
     selectColor.value = colorMode;
@@ -1333,7 +1320,7 @@ function applyState(data) {
     checkIncWhite.checked = incWhite;
     inputBg1.value = rgbToHex(bgA[0],bgA[1],bgA[2]);
     inputBg2.value = rgbToHex(bgB[0],bgB[1],bgB[2]);
-    
+
     sliderLength.value = currentPhysicsSteps;
     sliderDensity.value = currentDensity;
     sliderOpacity.value = currentOpacity * 1000;
@@ -1347,36 +1334,36 @@ function applyState(data) {
 
 function writePngDpi(blob, dpi) {
     const pixelsPerMeter = Math.round(dpi / 0.0254);
-    
+
     return new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const buffer = e.target.result;
             const view = new DataView(buffer);
-            
+
             if (view.getUint32(0) !== 0x89504E47) {
-                resolve(blob); 
+                resolve(blob);
                 return;
             }
 
             const physChunk = new Uint8Array(21);
             const physView = new DataView(physChunk.buffer);
-            
-            physView.setUint32(0, 9); 
-            physChunk.set([112, 72, 89, 115], 4); 
-            
-            physView.setUint32(8, pixelsPerMeter); 
-            physView.setUint32(12, pixelsPerMeter); 
-            physChunk[16] = 1; 
-            
+
+            physView.setUint32(0, 9);
+            physChunk.set([112, 72, 89, 115], 4);
+
+            physView.setUint32(8, pixelsPerMeter);
+            physView.setUint32(12, pixelsPerMeter);
+            physChunk[16] = 1;
+
             const crcInput = physChunk.subarray(4, 17);
             const crc = crc32(crcInput);
             physView.setUint32(17, crc);
 
             const newBlob = new Blob([
-                buffer.slice(0, 33), 
-                physChunk,           
-                buffer.slice(33)     
+                buffer.slice(0, 33),
+                physChunk,
+                buffer.slice(33)
             ], { type: 'image/png' });
 
             resolve(newBlob);
@@ -1394,6 +1381,70 @@ function crc32(buf) {
         }
     }
     return (crc ^ -1) >>> 0;
+}
+
+function buildTuneUI() {
+    const container = document.getElementById('ui-tune-container');
+    if (!container) return;
+
+    const defs = GEN_DEFS[currentGenType];
+
+    if (!currentCoeffs || !defs.params || defs.params.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    let html = '<div style="color:#ff00ff; font-weight:bold; margin-bottom:5px; font-size:12px;">LIVE TUNING</div>';
+
+    defs.params.forEach((p) => {
+        if (p.idx < 0) return; // Skip global range modifiers
+
+        const val = currentCoeffs[p.idx];
+        const min = p.min !== undefined ? p.min : p.defMin - 1.0;
+        const max = p.max !== undefined ? p.max : p.defMax + 1.0;
+        const step = (max - min) / 2000;
+
+        html += `
+            <div style="display:flex; justify-content:space-between; font-size:10px; color:#aaa; margin-bottom:2px;">
+                <span>${p.name}</span>
+                <span id="tune-val-${p.idx}">${val.toFixed(4)}</span>
+            </div>
+            <input type="range" id="tune-slider-${p.idx}" min="${min}" max="${max}" step="${step}" value="${val}" style="width:100%; margin-bottom:10px;">
+        `;
+    });
+
+    container.innerHTML = html;
+
+    defs.params.forEach((p) => {
+        if (p.idx < 0) return;
+        const slider = document.getElementById(`tune-slider-${p.idx}`);
+        const label = document.getElementById(`tune-val-${p.idx}`);
+
+        slider.oninput = (e) => {
+            const newVal = parseFloat(e.target.value);
+            label.innerText = newVal.toFixed(4);
+            currentCoeffs[p.idx] = newVal;
+
+            worker.postMessage({
+                type: 'render',
+                coeffs: currentCoeffs,
+                physicsSteps: Math.min(20000, currentPhysicsSteps),
+                density: 1,
+                genType: currentGenType
+            });
+        };
+
+        slider.onchange = () => {
+            worker.postMessage({
+                type: 'render',
+                coeffs: currentCoeffs,
+                physicsSteps: currentPhysicsSteps,
+                density: currentDensity,
+                genType: currentGenType
+            });
+        };
+    });
 }
 
 // ==========================================
@@ -1552,11 +1603,11 @@ const toggleBtn = document.createElement('div');
 toggleBtn.id = 'ui-toggle-btn';
 toggleBtn.innerText = '⚙️';
 toggleBtn.onclick = (e) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     const panel = document.getElementById('colorControls');
     const quickSearch = document.getElementById('ui-quick-search-btn');
     const quickSnap = document.getElementById('ui-quick-snap-btn');
-    
+
     if (panel.style.display === 'none') {
         panel.style.display = 'block';
         if (isMobile) {
@@ -1576,22 +1627,22 @@ document.body.appendChild(toggleBtn);
 
 const quickSearchBtn = document.createElement('button');
 quickSearchBtn.id = 'ui-quick-search-btn';
-quickSearchBtn.style.display = 'flex'; 
+quickSearchBtn.style.display = 'flex';
 quickSearchBtn.innerText = '⛏️ SEARCH!';
 quickSearchBtn.onclick = (e) => {
-    e.stopPropagation(); 
-    
+    e.stopPropagation();
+
     const uiStatus = document.getElementById('ui-main-status');
     if(uiStatus) {
-        uiStatus.innerText = "Scanning..."; 
-        uiStatus.style.color = "#ffff00"; 
+        uiStatus.innerText = "Scanning...";
+        uiStatus.style.color = "#ffff00";
     }
-    
+
     worker.postMessage({
-        type: 'mine', 
-        genType: currentGenType, 
+        type: 'mine',
+        genType: currentGenType,
         constraints: currentConstraints
-    }); 
+    });
 };
 document.body.appendChild(quickSearchBtn);
 
@@ -1599,10 +1650,10 @@ const quickSnapBtn = document.createElement('button');
 quickSnapBtn.id = 'ui-quick-snap-btn';
 quickSnapBtn.innerHTML = '📸';
 quickSnapBtn.title = 'Quick HD Snapshot (1080p)';
-quickSnapBtn.style.display = 'flex'; 
+quickSnapBtn.style.display = 'flex';
 
 quickSnapBtn.onclick = (e) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     if (isExporting || !currentCoeffs) return;
 
     const checkGuide = document.getElementById('ui-show-guide');
@@ -1611,19 +1662,19 @@ quickSnapBtn.onclick = (e) => {
         startTiledExport('download');
     } else {
         const isLandscape = canvas.width > canvas.height;
-        
+
         const prevUnit = exportUnit;
         const prevW = inpW.value;
         const prevH = inpH.value;
         const prevDpi = inpDPI.value;
-        
+
         exportUnit = 'pixels';
         inpW.value = isLandscape ? 1920 : 1080;
         inpH.value = isLandscape ? 1080 : 1920;
         inpDPI.value = 72;
-        
+
         startTiledExport('download');
-        
+
         exportUnit = prevUnit;
         inpW.value = prevW;
         inpH.value = prevH;
@@ -1635,7 +1686,7 @@ document.body.appendChild(quickSnapBtn);
 
 const div = document.createElement('div');
 div.id = 'colorControls';
-if (isMobile) div.style.display = 'none'; 
+if (isMobile) div.style.display = 'none';
 
 const powerModal = document.createElement('div');
 powerModal.id = 'power-modal';
@@ -1659,13 +1710,13 @@ document.body.appendChild(overlay);
 function updatePowerUI() {
     const type = selectGenType.value;
     const defs = GEN_DEFS[type];
-    
+
     let html = `<div style="display:flex; justify-content:space-between; align-items:center;">
         <h3 style="margin:0; color:#0f0">⚡ Power Mode: ${defs.label}</h3>
         <button id="pm-reset" style="background:#444; color:#fff; border:1px solid #777; padding:2px 8px; font-size:10px; cursor:pointer;">RESET DEFAULTS</button>
     </div>`;
     html += `<div style="margin-bottom:15px; font-size:12px; color:#aaa;">Define search ranges for the miner.</div>`;
-    
+
     html += `<div style="margin-bottom:10px;">
         <label>Time Step (dt)</label>
         <input type="number" id="pm-dt" value="${defs.dt}" step="0.0001" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px;">
@@ -1687,7 +1738,7 @@ function updatePowerUI() {
     }
 
     html += `<button id="pm-apply" style="width:100%; padding:12px; background:#0f0; color:#000; font-weight:bold; border:none; margin-top:15px; cursor:pointer;">APPLY & SEARCH ⛏️</button>`;
-    
+
     powerModal.innerHTML = html;
 
     document.getElementById('pm-reset').onclick = () => {
@@ -1698,7 +1749,7 @@ function updatePowerUI() {
                 p.valMax = p.defMax;
             });
         }
-        updatePowerUI(); 
+        updatePowerUI();
     };
 
     document.getElementById('pm-apply').onclick = () => {
@@ -1719,7 +1770,7 @@ function updatePowerUI() {
         currentConstraints = { dt: defs.dt, params: newParams };
         powerModal.style.display = 'none';
         overlay.style.display = 'none';
-        
+
         uiStatus.innerText = "Mining with Constraints...";
         worker.postMessage({ type: 'mine', genType: type, constraints: currentConstraints });
     };
@@ -1730,19 +1781,19 @@ function createSection(title, contentHTML) {
     const header = document.createElement('div');
     header.className = 'ui-header';
     header.innerHTML = `▶ ${title}`;
-    
+
     const content = document.createElement('div');
     content.className = 'ui-content';
     content.innerHTML = contentHTML;
-    
-    content.style.display = 'none'; 
+
+    content.style.display = 'none';
 
     header.onclick = () => {
         const isClosed = content.style.display === 'none';
         content.style.display = isClosed ? 'block' : 'none';
         header.innerHTML = `${isClosed ? '▼' : '▶'} ${title}`;
     };
-    
+
     section.appendChild(header);
     section.appendChild(content);
     return section;
@@ -1762,6 +1813,7 @@ div.appendChild(createSection("GENERATION", `
         <option value="aizawa">Aizawa (Sphere Tube)</option>
         <option value="rikitake">Rikitake (Double Spiral)</option>
         <option value="chua">Chua (Double Scroll)</option>
+        <option value="moore">Moore-Spiegel (Cosmic Knot)</option>
     </select>
     <div style="display:flex; gap:5px; margin-bottom:5px;">
         <button id="ui-btn-mine" style="flex:1; cursor:pointer; background:#440000; color:#fff; border:1px solid #f00; padding:10px;">⛏️ SEARCH</button>
@@ -1780,6 +1832,8 @@ div.appendChild(createSection("GENERATION", `
     <input type="range" id="ui-density" min="1" max="50" value="12" style="width:100%;">
     <div style="color:#0f0; margin-bottom:5px;">VARIATION (Texture)</div>
     <input type="range" id="ui-variation" min="0" max="100" value="0" style="width:100%;">
+    
+    <div id="ui-tune-container" style="display:none; margin-top:10px; border-top:1px solid #444; padding-top:10px;"></div>
 `));
 
 div.appendChild(createSection("APPEARANCE", `
@@ -1926,14 +1980,14 @@ const fileInput = document.getElementById('ui-file-input');
 const inputBg1 = document.getElementById('ui-bg-color-1');
 const inputBg2 = document.getElementById('ui-bg-color-2');
 const btnRerollBg = document.getElementById('ui-btn-reroll-bg');
-const selectBlend = document.getElementById('ui-blend-mode'); 
+const selectBlend = document.getElementById('ui-blend-mode');
 const selectColor = document.getElementById('ui-color-mode');
 const checkIncBlack = document.getElementById('ui-inc-black');
 const checkIncWhite = document.getElementById('ui-inc-white');
 const btnColor = document.getElementById('ui-btn-color');
 const btnReset = document.getElementById('ui-btn-reset');
-const sliderLength = document.getElementById('ui-length'); 
-const sliderIntensity = document.getElementById('ui-intensity'); 
+const sliderLength = document.getElementById('ui-length');
+const sliderIntensity = document.getElementById('ui-intensity');
 const sliderOpacity = document.getElementById('ui-opacity');
 const sliderVariation = document.getElementById('ui-variation');
 const sliderSize = document.getElementById('ui-size');
@@ -1950,7 +2004,7 @@ const inpH = document.getElementById('ui-print-h');
 const inpDPI = document.getElementById('ui-print-dpi');
 const inpPasses = document.getElementById('ui-print-passes');
 
-selectBlend.value = blendMode; 
+selectBlend.value = blendMode;
 selectColor.value = colorMode;
 
 window.onerror = function(msg, url, line) {
@@ -1979,40 +2033,40 @@ selectExportUnit.onchange = (e) => {
     if (exportUnit === 'pixels') {
         labelW.innerText = "Width (px)";
         labelH.innerText = "Height (px)";
-        wInput.value = 1920; 
+        wInput.value = 1920;
         hInput.value = 1080;
-        dpiInput.value = 72; 
+        dpiInput.value = 72;
     } else {
         labelW.innerText = "Width (in)";
         labelH.innerText = "Height (in)";
         wInput.value = 24;
         hInput.value = 36;
-        dpiInput.value = 300; 
+        dpiInput.value = 300;
     }
 };
 
 checkTransparent.onchange = (e) => { exportTransparent = e.target.checked; };
 
-selectGenType.onchange = (e) => { 
+selectGenType.onchange = (e) => {
     currentGenType = e.target.value;
-    currentConstraints = null; 
+    currentConstraints = null;
 };
 
 inputBg1.oninput = (e) => { bgA = hexToRgb(e.target.value); };
 inputBg2.oninput = (e) => { bgB = hexToRgb(e.target.value); };
 btnRerollBg.onclick = () => {
     if (blendMode === 'ADD') {
-        const dominant = Math.floor(Math.random() * 3); 
-        const intensity = 0.1 + Math.random() * 0.15; 
+        const dominant = Math.floor(Math.random() * 3);
+        const intensity = 0.1 + Math.random() * 0.15;
         const c = [0, 0, 0];
-        c[dominant] = intensity; 
+        c[dominant] = intensity;
         c[(dominant + 1) % 3] = Math.random() * (intensity * 0.3);
         c[(dominant + 2) % 3] = Math.random() * (intensity * 0.3);
-        bgA = c; 
-        bgB = [0.02, 0.02, 0.02]; 
+        bgA = c;
+        bgB = [0.02, 0.02, 0.02];
     } else {
-        const val = 0.8 + Math.random() * 0.2; 
-        bgA = [val, val, val]; 
+        const val = 0.8 + Math.random() * 0.2;
+        bgA = [val, val, val];
         const r = val - (Math.random() * 0.1);
         const g = val - (Math.random() * 0.1);
         const b = val - (Math.random() * 0.1);
@@ -2021,14 +2075,14 @@ btnRerollBg.onclick = () => {
 
     inputBg1.value = rgbToHex(bgA[0], bgA[1], bgA[2]);
     inputBg2.value = rgbToHex(bgB[0], bgB[1], bgB[2]);
-    bgParams[0] = Math.random() * 6.28; 
-    bgParams[1] = 0.2 + Math.random() * 0.6; 
-    bgParams[2] = 0.8 + Math.random() * 0.5; 
+    bgParams[0] = Math.random() * 6.28;
+    bgParams[1] = 0.2 + Math.random() * 0.6;
+    bgParams[2] = 0.8 + Math.random() * 0.5;
 };
-selectBlend.onchange = (e) => { 
-    blendMode = e.target.value; 
+selectBlend.onchange = (e) => {
+    blendMode = e.target.value;
     isInverted = (blendMode === 'NORMAL');
-}; 
+};
 selectColor.onchange = (e) => { colorMode = parseInt(e.target.value); };
 checkIncBlack.onchange = (e) => { incBlack = e.target.checked; };
 checkIncWhite.onchange = (e) => { incWhite = e.target.checked; };
@@ -2042,13 +2096,14 @@ sliderLength.oninput = (e) => {
     currentPhysicsSteps = parseInt(e.target.value);
     if(currentCoeffs) worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType });
 };
-sliderDensity.oninput = (e) => { 
+sliderDensity.oninput = (e) => {
     currentDensity = parseInt(e.target.value);
     if(currentCoeffs) worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType });
 };
 sliderJitter.oninput = (e) => { currentJitter = parseInt(e.target.value) / 10.0; };
 sliderGamma.oninput = (e) => { currentGamma = parseInt(e.target.value) / 10.0; };
 sliderSmooth.oninput = (e) => { currentNoise = parseInt(e.target.value) / 200.0; };
+
 btnSnap.onclick = () => { startTiledExport('download'); };
 btnOrder.onclick = () => { startTiledExport('pod'); };
 
@@ -2072,40 +2127,35 @@ btnVideo.onclick = async () => {
         isExporting = true;
         exportLog.innerText = "⏳ Initializing Encoder...";
         exportLog.style.color = "#fff";
-        
+
         const duration = parseFloat(document.getElementById('ui-vid-time').value) || 5;
         const fps = parseInt(document.getElementById('ui-vid-fps').value) || 60;
         const totalFrames = Math.floor(duration * fps);
-        
+
         let targetW = canvas.width;
         let targetH = canvas.height;
-        
+
         if (exportUnit === 'pixels') {
             targetW = parseInt(document.getElementById('ui-print-w').value) || canvas.width;
             targetH = parseInt(document.getElementById('ui-print-h').value) || canvas.height;
         }
 
-        // Hardware encoders strictly require even dimensions
         const w = targetW - (targetW % 2);
         const h = targetH - (targetH % 2);
 
-        // --- NEW: SAVE ALL ORIGINAL STATES ---
         const origW = canvas.width;
         const origH = canvas.height;
         const originalZoom = camZoom;
         const originalPanX = camPanX;
         const originalPanY = camPanY;
         const originalQuat = [...currentQuat];
-        
+
         const guideCheckbox = document.getElementById('ui-show-guide');
         const wasGuideOn = guideCheckbox ? guideCheckbox.checked : false;
 
-// --- FIXED: FRAMING COMPENSATION (CONTAIN) ---
         const screenAspect = origW / origH;
         const exportAspect = w / h;
 
-        // ONLY apply compensation if the export target is WIDER than your current screen.
-        // If it's narrower (like a square on a widescreen monitor), WebGL's native Y-lock handles it perfectly.
         if (exportAspect > screenAspect) {
             const framingRatio = exportAspect / screenAspect;
             camZoom *= framingRatio;
@@ -2113,22 +2163,19 @@ btnVideo.onclick = async () => {
             camPanY *= framingRatio;
         }
 
-        // Apply export state (forces WebGL into the new resolution)
         canvas.width = w;
         canvas.height = h;
         resizeViewportFBO();
         if (guideCheckbox) guideCheckbox.checked = false;
 
-// --- NEW: SAFER CODEC & PRE-FLIGHT CHECK ---
         const pixelCount = w * h;
         const baseBitrate = (pixelCount / (1920 * 1080)) * 15000000;
 
-        // avc1.4d002a = H.264 Main Profile, Level 4.2 (Extremely high compatibility)
         const videoConfig = {
-            codec: 'avc1.4d002a', 
+            codec: 'avc1.4d002a',
             width: w,
             height: h,
-            bitrate: Math.floor(baseBitrate), 
+            bitrate: Math.floor(baseBitrate),
             framerate: fps
         };
 
@@ -2146,62 +2193,56 @@ btnVideo.onclick = async () => {
 
         let videoEncoder = new VideoEncoder({
             output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-            error: e => { 
-                console.error("VideoEncoder internal error:", e); 
+            error: e => {
+                console.error("VideoEncoder internal error:", e);
             }
         });
 
         videoEncoder.configure(videoConfig);
-        //const originalQuat = [...currentQuat];
-        
+
         for (let i = 0; i < totalFrames; i++) {
             exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames} (${w}x${h})`;
-            
+
             const angle = (i / totalFrames) * Math.PI * 2;
             const turnQuat = qFromAxisAngle([0, 1, 0], angle);
-            currentQuat = qMult(turnQuat, originalQuat); 
-            
-if (videoEncoder.state === 'closed') {
+            currentQuat = qMult(turnQuat, originalQuat);
+
+            if (videoEncoder.state === 'closed') {
                 throw new Error("Encoder closed unexpectedly during render.");
             }
-            
+
             renderFrame();
             gl.finish();
 
-            renderFrame();
-            gl.finish(); 
-            
-            const timestamp = (i / fps) * 1_000_000; 
+            const timestamp = (i / fps) * 1_000_000;
             const frame = new VideoFrame(canvas, { timestamp, alpha: 'discard' });
-            
+
             videoEncoder.encode(frame, { keyFrame: (i % fps === 0) });
             frame.close();
-            
-            // Yield to browser to update UI
-            await new Promise(r => setTimeout(r, 0)); 
+
+            await new Promise(r => setTimeout(r, 0));
         }
 
         exportLog.innerText = "📦 Finalizing MP4...";
         await videoEncoder.flush();
         muxer.finalize();
-        
+
         const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; 
+        a.href = url;
         a.download = `attractor_loop_${generateID()}.mp4`;
-        document.body.appendChild(a); 
-        a.click(); 
+        document.body.appendChild(a);
+        a.click();
         document.body.removeChild(a);
-        
-        // --- RESTORE ALL ORIGINAL STATES ---
+
         canvas.width = origW;
         canvas.height = origH;
         camZoom = originalZoom;
         camPanX = originalPanX;
         camPanY = originalPanY;
         currentQuat = originalQuat;
-        
+
         resizeViewportFBO();
         if (guideCheckbox) guideCheckbox.checked = wasGuideOn;
         isExporting = false;
@@ -2213,8 +2254,6 @@ if (videoEncoder.state === 'closed') {
         console.error("Video Export Crash:", err);
         exportLog.innerText = "❌ Crash: " + err.message;
         exportLog.style.color = "red";
-        
-        // Emergency cleanup if something throws
         isExporting = false;
     }
 };
@@ -2225,10 +2264,10 @@ document.getElementById('ui-btn-power').onclick = () => {
     overlay.style.display = 'block';
 };
 
-btnMine.onclick = () => { 
-    uiStatus.innerText = "Scanning..."; 
-    uiStatus.style.color = "#ffff00"; 
-    worker.postMessage({type: 'mine', genType: currentGenType, constraints: currentConstraints}); 
+btnMine.onclick = () => {
+    uiStatus.innerText = "Scanning...";
+    uiStatus.style.color = "#ffff00";
+    worker.postMessage({type: 'mine', genType: currentGenType, constraints: currentConstraints});
 };
 
 btnMutate.onclick = () => {
@@ -2237,31 +2276,32 @@ btnMutate.onclick = () => {
     worker.postMessage({ type: 'mutate', coeffs: currentCoeffs, genType: currentGenType });
 };
 
-btnSave.onclick = () => { 
-    if (!currentCoeffs) return; 
+btnSave.onclick = () => {
+    if (!currentCoeffs) return;
     const meta = serializeState();
     const data = { coeffs: Array.from(currentCoeffs), settings: meta };
     const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); 
-    a.href = url; 
-    a.download = `attractor_${meta.id}.json`; 
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); 
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attractor_${meta.id}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
 };
 
 btnLoad.onclick = () => fileInput.click();
-fileInput.onchange = (e) => { 
-    const r = new FileReader(); 
-    r.onload = (ev) => { 
-        try { 
-            const d = JSON.parse(ev.target.result); 
-            currentCoeffs = Object.values(d.coeffs || d).map(Number); 
+fileInput.onchange = (e) => {
+    const r = new FileReader();
+    r.onload = (ev) => {
+        try {
+            const d = JSON.parse(ev.target.result);
+            currentCoeffs = Object.values(d.coeffs || d).map(Number);
             applyState(d);
-            worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType }); 
-            uiStatus.innerText = "Loaded " + (d.settings ? d.settings.id : "Legacy"); 
-        } catch(e){console.error(e);} 
-    }; 
-    if(e.target.files[0]) r.readAsText(e.target.files[0]); 
+            buildTuneUI();
+            worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType });
+            uiStatus.innerText = "Loaded " + (d.settings ? d.settings.id : "Legacy");
+        } catch(e){console.error(e);}
+    };
+    if(e.target.files[0]) r.readAsText(e.target.files[0]);
 };
 
 canvas.oncontextmenu = (e) => e.preventDefault();
@@ -2269,7 +2309,7 @@ canvas.oncontextmenu = (e) => e.preventDefault();
 function applyTrackballRotation(dx, dy) {
     const dist = Math.hypot(dx, dy);
     if (dist < 0.01) return;
-    const axis = [-dy, -dx, 0]; 
+    const axis = [-dy, -dx, 0];
     const angle = dist * 0.005;
     const qDelta = qFromAxisAngle(axis, angle);
     currentQuat = qMult(qDelta, currentQuat);
@@ -2278,7 +2318,7 @@ function applyTrackballRotation(dx, dy) {
 
 function applyRoll(angleDelta) {
     const qDelta = qFromAxisAngle([0,0,-1], angleDelta);
-    currentQuat = qMult(qDelta, currentQuat); 
+    currentQuat = qMult(qDelta, currentQuat);
     currentQuat = qNormalize(currentQuat);
 }
 
@@ -2301,10 +2341,10 @@ canvas.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
         const p = getRelativeTouchPos(e.touches[0], canvas);
         lastX = p.x; lastY = p.y;
-        
+
         const dist = Math.hypot(p.x - p.cx, p.y - p.cy);
         const maxDist = Math.min(p.width, p.height) / 2;
-        
+
         if (dist > maxDist * 0.8) {
             isRolling = true;
             isDragging = false;
@@ -2329,7 +2369,7 @@ canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
     if (e.touches.length === 1) {
         const p = getRelativeTouchPos(e.touches[0], canvas);
-        
+
         if (isRolling) {
             const angle = Math.atan2(p.y - p.cy, p.x - p.cx);
             const delta = angle - lastAngle;
@@ -2345,27 +2385,27 @@ canvas.addEventListener('touchmove', (e) => {
     } else if (e.touches.length === 2 && isPanning) {
         const p1 = getRelativeTouchPos(e.touches[0], canvas);
         const p2 = getRelativeTouchPos(e.touches[1], canvas);
-        
+
         const newDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
         const cx = (p1.x + p2.x) / 2;
         const cy = (p1.y + p2.y) / 2;
-        
+
         const zoomDelta = newDist / lastDist;
         camZoom *= zoomDelta;
-        
+
         const pdx = (cx - lastX) / p1.height * 2;
         const pdy = (cy - lastY) / p1.height * 2;
-        camPanX += pdx; camPanY -= pdy; 
-        
+        camPanX += pdx; camPanY -= pdy;
+
         lastDist = newDist; lastX = cx; lastY = cy;
     }
 }, {passive:false});
 
 canvas.addEventListener('touchend', (e) => {
-  isInteracting = false;
-  isDragging=false;
-  isPanning=false;
-  isRolling=false;
+    isInteracting = false;
+    isDragging=false;
+    isPanning=false;
+    isRolling=false;
 });
 
 canvas.onmousedown = (e) => {
@@ -2376,16 +2416,16 @@ canvas.onmousedown = (e) => {
     const my = e.clientY - rect.top;
     const cx = rect.width / 2;
     const cy = rect.height / 2;
-    
+
     lastX = mx; lastY = my;
-    
+
     if (e.button === 2) {
         isPanning = true; isDragging = false; isRolling = false;
     } else {
         isPanning = false;
         const dist = Math.hypot(mx - cx, my - cy);
         const maxDist = Math.min(rect.width, rect.height) / 2;
-        
+
         if (dist > maxDist * 0.8) {
             isRolling = true;
             isDragging = false;
@@ -2398,8 +2438,8 @@ canvas.onmousedown = (e) => {
 };
 
 window.onmouseup = () => {
-  isInteracting = false;
-  isDragging = false; isPanning = false; isRolling = false;
+    isInteracting = false;
+    isDragging = false; isPanning = false; isRolling = false;
 };
 
 window.onmousemove = (e) => {
@@ -2407,7 +2447,7 @@ window.onmousemove = (e) => {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    
+
     if (isRolling) {
         const cx = rect.width / 2;
         const cy = rect.height / 2;
@@ -2436,7 +2476,7 @@ canvas.onwheel = (e) => {
     e.preventDefault();
     const factor = Math.pow(1.00025, -e.deltaY);
     camZoom *= factor;
-    camZoom = Math.max(0.01, camZoom); 
+    camZoom = Math.max(0.01, camZoom);
 };
 
 // ==========================================
@@ -2450,7 +2490,7 @@ const fullWorkerString = `
 `;
 
 const blob = new Blob([fullWorkerString], { type: 'application/javascript' });
-let worker = new Worker(URL.createObjectURL(blob)); 
+let worker = new Worker(URL.createObjectURL(blob));
 
 worker.onerror = function(e) {
     uiStatus.innerText = "Worker Error: " + e.message;
@@ -2461,7 +2501,7 @@ worker.onerror = function(e) {
 worker.onmessage = (e) => {
     if (e.data.type === 'status') {
         uiStatus.innerText = e.data.msg;
-    } 
+    }
     else if (e.data.type === 'found') {
         const data = new Float32Array(e.data.buffer);
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -2470,8 +2510,8 @@ worker.onmessage = (e) => {
         gl.bindBuffer(gl.ARRAY_BUFFER, metaBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, meta, gl.STATIC_DRAW);
         pointCount = data.length / 3;
-        
-        gpuRenderedDensity = e.data.density || 1.0; 
+
+        gpuRenderedDensity = e.data.density || 1.0;
 
         if (isExporting && exportResolve) {
             exportResolve();
@@ -2482,21 +2522,23 @@ worker.onmessage = (e) => {
             uiStatus.innerText = `FOUND! (${e.data.attempts} attempts)`;
             uiStatus.style.color = "#00ff00";
             currentCoeffs = new Float32Array(e.data.coeffs);
-            
+
+            buildTuneUI();
+
             if (e.data.source === 'mine') {
                 colorSeed = [Math.random(), Math.random(), Math.random()];
-                camPanX = 0; camPanY = 0; camZoom = 2.0; 
+                camPanX = 0; camPanY = 0; camZoom = 2.0;
                 currentQuat = qIdentity();
             }
-            
+
             uiStatus.innerText = `Refining... (${e.data.attempts})`;
-            worker.postMessage({ 
-                type: 'render', 
-                coeffs: currentCoeffs, 
-                physicsSteps: currentPhysicsSteps, 
-                density: currentDensity, 
+            worker.postMessage({
+                type: 'render',
+                coeffs: currentCoeffs,
+                physicsSteps: currentPhysicsSteps,
+                density: currentDensity,
                 genType: currentGenType,
-                constraints: e.data.constraints 
+                constraints: e.data.constraints
             });
         }
     }
@@ -2505,180 +2547,178 @@ worker.onmessage = (e) => {
 let exportResolve = null;
 
 async function startPrintCheckout(blob) {
-  const uiExport = document.getElementById('ui-export-status');
-  const container = document.getElementById('colorControls');
-  
-  if (!blob) {
-      uiExport.innerText = "Error: No image data generated.";
-      return;
-  }
+    const uiExport = document.getElementById('ui-export-status');
+    const container = document.getElementById('colorControls');
 
-  if (typeof grecaptcha === 'undefined') {
-      uiExport.innerText = "Error: reCAPTCHA not loaded. Refresh page.";
-      return;
-  }
+    if (!blob) {
+        uiExport.innerText = "Error: No image data generated.";
+        return;
+    }
 
-  uiExport.innerText = "🤖 Verifying you are human...";
-  const allButtons = document.querySelectorAll('button');
-  allButtons.forEach(b => b.disabled = true);
+    if (typeof grecaptcha === 'undefined') {
+        uiExport.innerText = "Error: reCAPTCHA not loaded. Refresh page.";
+        return;
+    }
 
-  try {
-    const token = await new Promise((resolve) => {
-        grecaptcha.ready(() => {
-            grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: 'print_order'}).then(resolve);
+    uiExport.innerText = "🤖 Verifying you are human...";
+    const allButtons = document.querySelectorAll('button');
+    allButtons.forEach(b => b.disabled = true);
+
+    try {
+        const token = await new Promise((resolve) => {
+            grecaptcha.ready(() => {
+                grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: 'print_order'}).then(resolve);
+            });
         });
-    });
 
-    uiExport.innerText = "⏳ Requesting Cloud Storage...";
+        uiExport.innerText = "⏳ Requesting Cloud Storage...";
 
-    const authResp = await fetch(POD_API_URL + "?recaptcha_token=" + token);
-    const authData = await authResp.json();
-    
-    if (authData.error) throw new Error(authData.error);
+        const authResp = await fetch(POD_API_URL + "?recaptcha_token=" + token);
+        const authData = await authResp.json();
 
-    uiExport.innerText = "☁️ Uploading High-Res Image...";
-    const uploadResp = await fetch(authData.uploadUrl, {
-      method: "PUT",
-      body: blob,
-      headers: { "Content-Type": "image/png" }
-    });
+        if (authData.error) throw new Error(authData.error);
 
-    if (!uploadResp.ok) throw new Error("Upload failed: " + uploadResp.statusText);
+        uiExport.innerText = "☁️ Uploading High-Res Image...";
+        const uploadResp = await fetch(authData.uploadUrl, {
+            method: "PUT",
+            body: blob,
+            headers: { "Content-Type": "image/png" }
+        });
 
-    const signedUrl = authData.publicUrl;
-    
-    uiExport.innerText = "✅ Ready.";
+        if (!uploadResp.ok) throw new Error("Upload failed: " + uploadResp.statusText);
 
-    const actionContainerId = 'pod-action-container';
-    let actionContainer = document.getElementById(actionContainerId);
-    if (actionContainer) actionContainer.remove(); 
+        const signedUrl = authData.publicUrl;
 
-    actionContainer = document.createElement('div');
-    actionContainer.id = actionContainerId;
-    actionContainer.style.marginTop = "10px";
-    actionContainer.style.borderTop = "1px solid #555";
-    actionContainer.style.paddingTop = "10px";
-    
-    actionContainer.style.margin = "0 10px 10px 10px"; 
+        uiExport.innerText = "✅ Ready.";
 
-    const inchesW = parseFloat(inpW.value);
-    const inchesH = parseFloat(inpH.value);
-    const dpi = parseInt(inpDPI.value);
-    
-    let totalW, totalH;
-    
-    if (exportUnit === 'pixels') {
-        totalW = Math.floor(inchesW);
-        totalH = Math.floor(inchesH);
-    } else {
-        totalW = Math.floor(inchesW * dpi);
-        totalH = Math.floor(inchesH * dpi);
-    }
-    
-    const masterCanvas = document.createElement('canvas');
-    masterCanvas.width = totalW;
-    masterCanvas.height = totalH;
+        const actionContainerId = 'pod-action-container';
+        let actionContainer = document.getElementById(actionContainerId);
+        if (actionContainer) actionContainer.remove();
 
-    const peechoLink = document.createElement('a');
-    peechoLink.href = "https://www.peecho.com"; 
-    peechoLink.target = "_blank"; 
+        actionContainer = document.createElement('div');
+        actionContainer.id = actionContainerId;
+        actionContainer.style.marginTop = "10px";
+        actionContainer.style.borderTop = "1px solid #555";
+        actionContainer.style.paddingTop = "10px";
 
-    peechoLink.className = "peecho-print-button";     
-    peechoLink.setAttribute('data-src', signedUrl);
-    peechoLink.setAttribute('data-thumbnail', signedUrl);
-    peechoLink.setAttribute('data-filetype', 'image');
-    peechoLink.setAttribute('data-width', masterCanvas.width);
-    peechoLink.setAttribute('data-height', masterCanvas.height);
-    peechoLink.setAttribute('data-pages', '1');
-    peechoLink.setAttribute('data-reference', 'Strange Attractor #' + generateID());
+        actionContainer.style.margin = "0 10px 10px 10px";
 
-    const innerBtn = document.createElement('button');
-    innerBtn.innerText = "Review order options ↗️"; 
-    
-    innerBtn.style.backgroundColor = "#222";
-    innerBtn.style.color = "#fff"; 
-    innerBtn.style.padding = "10px";
-    innerBtn.style.border = "1px solid #0f0"; 
-    innerBtn.style.fontFamily = "monospace"; 
-    innerBtn.style.fontSize = "12px";
-    innerBtn.style.cursor = "pointer";
-    innerBtn.style.width = "100%"; 
-    innerBtn.style.fontWeight = "bold";
+        const inchesW = parseFloat(inpW.value);
+        const inchesH = parseFloat(inpH.value);
+        const dpi = parseInt(inpDPI.value);
 
-    peechoLink.appendChild(innerBtn);
-    actionContainer.appendChild(peechoLink);
+        let totalW, totalH;
 
-    const footer = document.getElementById('ui-main-status')?.parentNode;
-    if(footer) container.insertBefore(actionContainer, footer);
-    else container.appendChild(actionContainer);
-
-    const scriptId = 'peecho-sdk-script';
-    if (!document.getElementById(scriptId)) {
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = "https://d3aln0nj58oevo.cloudfront.net/button/script/177021676045966460.js";
-        document.body.appendChild(script);
-    } else {
-        if (window.Peecho && window.Peecho.refresh) {
-            console.log("Refreshing Peecho buttons...");
-            window.Peecho.refresh();
+        if (exportUnit === 'pixels') {
+            totalW = Math.floor(inchesW);
+            totalH = Math.floor(inchesH);
+        } else {
+            totalW = Math.floor(inchesW * dpi);
+            totalH = Math.floor(inchesH * dpi);
         }
+
+        const masterCanvas = document.createElement('canvas');
+        masterCanvas.width = totalW;
+        masterCanvas.height = totalH;
+
+        const peechoLink = document.createElement('a');
+        peechoLink.href = "https://www.peecho.com";
+        peechoLink.target = "_blank";
+
+        peechoLink.className = "peecho-print-button";
+        peechoLink.setAttribute('data-src', signedUrl);
+        peechoLink.setAttribute('data-thumbnail', signedUrl);
+        peechoLink.setAttribute('data-filetype', 'image');
+        peechoLink.setAttribute('data-width', masterCanvas.width);
+        peechoLink.setAttribute('data-height', masterCanvas.height);
+        peechoLink.setAttribute('data-pages', '1');
+        peechoLink.setAttribute('data-reference', 'Strange Attractor #' + generateID());
+
+        const innerBtn = document.createElement('button');
+        innerBtn.innerText = "Review order options ↗️";
+
+        innerBtn.style.backgroundColor = "#222";
+        innerBtn.style.color = "#fff";
+        innerBtn.style.padding = "10px";
+        innerBtn.style.border = "1px solid #0f0";
+        innerBtn.style.fontFamily = "monospace";
+        innerBtn.style.fontSize = "12px";
+        innerBtn.style.cursor = "pointer";
+        innerBtn.style.width = "100%";
+        innerBtn.style.fontWeight = "bold";
+
+        peechoLink.appendChild(innerBtn);
+        actionContainer.appendChild(peechoLink);
+
+        const footer = document.getElementById('ui-main-status')?.parentNode;
+        if(footer) container.insertBefore(actionContainer, footer);
+        else container.appendChild(actionContainer);
+
+        const scriptId = 'peecho-sdk-script';
+        if (!document.getElementById(scriptId)) {
+            const script = document.createElement('script');
+            script.id = scriptId;
+            script.src = "https://d3aln0nj58oevo.cloudfront.net/button/script/177021676045966460.js";
+            document.body.appendChild(script);
+        } else {
+            if (window.Peecho && window.Peecho.refresh) {
+                console.log("Refreshing Peecho buttons...");
+                window.Peecho.refresh();
+            }
+        }
+
+        allButtons.forEach(b => b.disabled = false);
+
+    } catch (err) {
+        console.error(err);
+        uiExport.innerText = "Error: " + err.message;
+        allButtons.forEach(b => b.disabled = false);
     }
-
-    allButtons.forEach(b => b.disabled = false);
-
-  } catch (err) {
-    console.error(err);
-    uiExport.innerText = "Error: " + err.message;
-    allButtons.forEach(b => b.disabled = false);
-  }
 }
 
 function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jitter, overridePanX, overridePanY, overrideZoom) {
     const rotMatrix = qToMatrix(currentQuat);
     gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
-    
+
     const usePanX = (overridePanX !== undefined) ? overridePanX : camPanX;
     const usePanY = (overridePanY !== undefined) ? overridePanY : camPanY;
     const useZoom = (overrideZoom !== undefined) ? overrideZoom : camZoom;
-    
+
     gl.uniform2f(gl.getUniformLocation(particleProgram, "u_pan"), usePanX, usePanY);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_zoom"), useZoom);
-    
+
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aspect"), forcedAspect);
     gl.uniform4f(gl.getUniformLocation(particleProgram, "u_tileBounds"), tileBounds[0], tileBounds[1], tileBounds[2], tileBounds[3]);
-    
+
     gl.uniform1i(gl.getUniformLocation(particleProgram, "u_colorMode"), colorMode);
     gl.uniform3f(gl.getUniformLocation(particleProgram, "u_colorSeed"), colorSeed[0], colorSeed[1], colorSeed[2]);
-    gl.uniform1i(gl.getUniformLocation(particleProgram, "u_invert"), 0); 
-    gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_black"), 1); 
-    gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_white"), 1); 
-    gl.uniform1f(gl.getUniformLocation(particleProgram, "u_variation"), currentVariation); 
+    gl.uniform1i(gl.getUniformLocation(particleProgram, "u_invert"), 0);
+    gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_black"), 1);
+    gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_white"), 1);
+    gl.uniform1f(gl.getUniformLocation(particleProgram, "u_variation"), currentVariation);
 
-    const focusVal = (parseInt(document.getElementById('ui-focus').value) / 1000.0); 
-const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) / 1000.0);
-    const apertureVal = parseInt(document.getElementById('ui-aperture').value); 
+    const focusVal = (parseInt(document.getElementById('ui-focus').value) / 1000.0);
+    const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) / 1000.0);
+    const apertureVal = parseInt(document.getElementById('ui-aperture').value);
 
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusDist"), focusVal);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-    // --- RESTORED: ZOOM BRIGHTNESS COMPENSATION (EXPORT) ---
     const zoomCorrection = useZoom / 2.0;
-
     let targetOpacity = (opac / currentDensity) * zoomCorrection;
-    let safeOpacity = Math.max(targetOpacity, 0.000001); 
-    
+    let safeOpacity = Math.max(targetOpacity, 0.000001);
+
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), safeOpacity);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_noise"), currentNoise);
-    
+
     gl.uniform2f(gl.getUniformLocation(particleProgram, "u_resolution"), totalW, totalH);
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_jitter"), (jitter !== undefined) ? jitter : currentJitter);
-    
+
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointCount"), pointCount);
 
-    const scalar = totalH / 1080.0; 
+    const scalar = totalH / 1080.0;
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar);
 
     if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
@@ -2687,14 +2727,14 @@ const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) /
 async function startTiledExport(mode = 'download') {
     if (isExporting || !currentCoeffs) return;
     isExporting = true;
-    
+
     const inchesW = parseFloat(inpW.value);
     const inchesH = parseFloat(inpH.value);
     const dpi = parseInt(inpDPI.value);
     const passes = parseInt(inpPasses.value);
-    
+
     let totalW, totalH;
-    
+
     if (exportUnit === 'pixels') {
         totalW = Math.floor(inchesW);
         totalH = Math.floor(inchesH);
@@ -2702,17 +2742,17 @@ async function startTiledExport(mode = 'download') {
         totalW = Math.floor(inchesW * dpi);
         totalH = Math.floor(inchesH * dpi);
     }
-    
+
     const masterCanvas = document.createElement('canvas');
     masterCanvas.width = totalW;
     masterCanvas.height = totalH;
     const ctx = masterCanvas.getContext('2d');
-    
-    const TILE_SIZE = 2048; 
-    const PADDING = 512; 
+
+    const TILE_SIZE = 2048;
+    const PADDING = 512;
     const cols = Math.ceil(totalW / TILE_SIZE);
     const rows = Math.ceil(totalH / TILE_SIZE);
-    
+
     const fbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     const tex = gl.createTexture();
@@ -2731,17 +2771,17 @@ async function startTiledExport(mode = 'download') {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, resolveTex, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.pixelStorei(gl.PACK_ALIGNMENT, 1); 
+    gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
 
     const exportPhysics = currentPhysicsSteps;
     const resolutionRatio = totalH / canvas.height;
-    
-    const exportOpacity = currentOpacity; 
+
+    const exportOpacity = currentOpacity;
     const exportJitter = currentJitter * resolutionRatio;
 
     const screenAspect = canvas.width / canvas.height;
     const printAspect = totalW / totalH;
-    
+
     let exportZoom = camZoom;
     let exportPanX = camPanX;
     let exportPanY = camPanY;
@@ -2753,30 +2793,30 @@ async function startTiledExport(mode = 'download') {
         exportPanY *= framingRatio;
     }
 
-    const meta = serializeState(); 
+    const meta = serializeState();
     const exportID = meta.id;
 
     for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
-            
+
             const drawX = x * TILE_SIZE;
             const drawY = y * TILE_SIZE;
             const drawW = Math.min(TILE_SIZE, totalW - drawX);
             const drawH = Math.min(TILE_SIZE, totalH - drawY);
-            
+
             const padLeft = (x > 0) ? PADDING : 0;
             const padTop  = (y > 0) ? PADDING : 0;
             const padRight = (x < cols - 1) ? PADDING : 0;
             const padBottom = (y < rows - 1) ? PADDING : 0;
-            
+
             const tileW = drawW + padLeft + padRight;
             const tileH = drawH + padTop + padBottom;
-            
+
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
             gl.viewport(0, 0, tileW, tileH);
             gl.clearColor(0,0,0,0);
             gl.clear(gl.COLOR_BUFFER_BIT);
-            
+
             const globalX = drawX - padLeft;
             const globalY = drawY - padTop;
             const nX = globalX / totalW;
@@ -2785,62 +2825,62 @@ async function startTiledExport(mode = 'download') {
             const nH = tileH / totalH;
 
             gl.useProgram(particleProgram);
-       
+
             gl.enable(gl.BLEND);
-            gl.blendFunc(gl.ONE, gl.ONE); 
-          
+            gl.blendFunc(gl.ONE, gl.ONE);
+
             for (let p = 0; p < passes; p++) {
                 uiExport.innerText = `Tile ${y*cols + x + 1}/${rows*cols} - Pass ${p+1}/${passes}`;
                 await new Promise(resolve => {
                     exportResolve = resolve;
-                    worker.postMessage({ 
-                        type: 'render', 
-                        coeffs: currentCoeffs, 
-                        physicsSteps: exportPhysics, 
-                        density: currentDensity, 
+                    worker.postMessage({
+                        type: 'render',
+                        coeffs: currentCoeffs,
+                        physicsSteps: exportPhysics,
+                        density: currentDensity,
                         seedOffset: p,
                         genType: currentGenType,
-                        constraints: meta.constraints 
+                        constraints: meta.constraints
                     });
                 });
 
                 renderTileParticles(totalW, totalH, [nX, nY, nW, nH], exportOpacity, totalW/totalH, exportJitter, exportPanX, exportPanY, exportZoom);
             }
-            
+
             gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
             gl.viewport(0, 0, tileW, tileH);
-            
+
             gl.useProgram(compositeProgram);
-            gl.disable(gl.BLEND); 
+            gl.disable(gl.BLEND);
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, tex);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_tex"), 0);
             gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_passes"), passes);
             gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_gamma"), currentGamma);
-            
+
             gl.uniform3f(gl.getUniformLocation(compositeProgram, "u_bg_a"), bgA[0], bgA[1], bgA[2]);
             gl.uniform3f(gl.getUniformLocation(compositeProgram, "u_bg_b"), bgB[0], bgB[1], bgB[2]);
             gl.uniform3f(gl.getUniformLocation(compositeProgram, "u_bg_params"), bgParams[0], bgParams[1], bgParams[2]);
             gl.uniform2f(gl.getUniformLocation(compositeProgram, "u_res"), totalW, totalH);
             gl.uniform2f(gl.getUniformLocation(compositeProgram, "u_off"), globalX, totalH - (globalY + tileH));
-            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_noise"), currentNoise); 
+            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_noise"), currentNoise);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_invert"), isInverted?1:0);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_black"), incBlack?1:0);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_white"), incWhite?1:0);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_transparent"), exportTransparent?1:0);
-            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), 1.0); 
-            
+            gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), 1.0);
+
             let bMode = 0;
             if (blendMode === 'ADD') bMode = 1;
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_blend_mode"), bMode);
             gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_show_guide"), 0);
 
             gl.drawArrays(gl.TRIANGLES, 0, 3);
-            
+
             const pixels = new Uint8Array(tileW * tileH * 4);
             gl.bindFramebuffer(gl.READ_FRAMEBUFFER, resolveFbo);
             gl.readPixels(0, 0, tileW, tileH, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-            
+
             const flipped = new Uint8ClampedArray(tileW * tileH * 4);
             const rowBytes = tileW * 4;
             for (let r = 0; r < tileH; r++) {
@@ -2848,22 +2888,22 @@ async function startTiledExport(mode = 'download') {
                 const dstOffset = (tileH - r - 1) * rowBytes;
                 flipped.set(srcRow, dstOffset);
             }
-            
+
             const imgData = new ImageData(flipped, tileW, tileH);
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = tileW; 
+            tempCanvas.width = tileW;
             tempCanvas.height = tileH;
             const tempCtx = tempCanvas.getContext('2d');
             tempCtx.putImageData(imgData, 0, 0);
             ctx.drawImage(tempCanvas, padLeft, padTop, drawW, drawH, drawX, drawY, drawW, drawH);
         }
     }
-    
+
     gl.deleteFramebuffer(fbo);
     gl.deleteFramebuffer(resolveFbo);
     gl.deleteTexture(tex);
     gl.deleteTexture(resolveTex);
-    
+
     masterCanvas.toBlob(async (rawBlob) => {
         const finalBlob = await writePngDpi(rawBlob, dpi);
 
@@ -2888,7 +2928,7 @@ async function startTiledExport(mode = 'download') {
 
         } else if (mode === 'pod') {
             uiExport.innerText = "Preparing Upload...";
-            startPrintCheckout(finalBlob); 
+            startPrintCheckout(finalBlob);
         }
     }, 'image/png');
 
@@ -2904,60 +2944,55 @@ function resetRenderState() {
 
 function renderFrame() {
     const desktopScale = isInteracting ? 0.5 : 1.0;
-    const mobileScale = 0.75; 
+    const mobileScale = 0.75;
     let renderScaleTarget = isMobile ? mobileScale : desktopScale;
-    
+
     if (Math.abs(renderScale - renderScaleTarget) > 0.01) {
         renderScale = renderScaleTarget;
         resizeViewportFBO();
     }
-    
+
     if (!viewFbo) resizeViewportFBO();
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, viewFbo);
     gl.viewport(0, 0, Math.floor(canvas.width * renderScale), Math.floor(canvas.height * renderScale));
-    
+
     try {
         gl.clearColor(0,0,0,0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        
+
         gl.useProgram(particleProgram);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE);
-        
+
         const rotMatrix = qToMatrix(currentQuat);
         gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, "u_rotation"), false, new Float32Array(rotMatrix));
         gl.uniform2f(gl.getUniformLocation(particleProgram, "u_pan"), camPanX, camPanY);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_zoom"), camZoom);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aspect"), canvas.width / canvas.height);
         gl.uniform4f(gl.getUniformLocation(particleProgram, "u_tileBounds"), 0.0, 0.0, 1.0, 1.0);
-        
+
         gl.uniform1i(gl.getUniformLocation(particleProgram, "u_colorMode"), colorMode);
         gl.uniform3f(gl.getUniformLocation(particleProgram, "u_colorSeed"), colorSeed[0], colorSeed[1], colorSeed[2]);
-        gl.uniform1i(gl.getUniformLocation(particleProgram, "u_invert"), 0); 
-        gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_black"), 1); 
-        gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_white"), 1); 
-        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_variation"), currentVariation); 
+        gl.uniform1i(gl.getUniformLocation(particleProgram, "u_invert"), 0);
+        gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_black"), 1);
+        gl.uniform1i(gl.getUniformLocation(particleProgram, "u_inc_white"), 1);
+        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_variation"), currentVariation);
 
-        const focusVal = (parseInt(document.getElementById('ui-focus').value) / 1000.0); 
+        const focusVal = (parseInt(document.getElementById('ui-focus').value) / 1000.0);
         const focusSpanVal = (parseInt(document.getElementById('ui-focus-span').value) / 1000.0);
-        const apertureVal = parseInt(document.getElementById('ui-aperture').value); 
+        const apertureVal = parseInt(document.getElementById('ui-aperture').value);
 
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusDist"), focusVal);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_focusSpan"), focusSpanVal);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_aperture"), apertureVal);
 
-const interactionDimmer = isInteracting ? 0.4 : 1.0; 
+        const interactionDimmer = isInteracting ? 0.4 : 1.0;
+        const zoomCorrection = camZoom / 2.0;
 
-        // --- RESTORED: ZOOM BRIGHTNESS COMPENSATION ---
-        // Normalizes around the baseline zoom of 2.0. 
-        // Zooms out (<2.0) dim the opacity to prevent blowouts.
-        // Zooms in (>2.0) boost the opacity to prevent fading.
-        const zoomCorrection = camZoom / 2.0; 
+        let targetOpacity = (currentOpacity / gpuRenderedDensity) * interactionDimmer * zoomCorrection;
+        let safeOpacity = Math.max(targetOpacity, 0.000001);
 
-        let targetOpacity = (currentOpacity / gpuRenderedDensity) * interactionDimmer * zoomCorrection; 
-        let safeOpacity = Math.max(targetOpacity, 0.000001); 
-        
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), safeOpacity);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_noise"), currentNoise);
@@ -2965,35 +3000,35 @@ const interactionDimmer = isInteracting ? 0.4 : 1.0;
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_jitter"), currentJitter);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointCount"), pointCount);
 
-        const scalar = Math.max(1.0, canvas.height / 1080.0); 
+        const scalar = Math.max(1.0, canvas.height / 1080.0);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar);
 
         if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, canvas.width, canvas.height); 
-        
+        gl.viewport(0, 0, canvas.width, canvas.height);
+
         gl.useProgram(compositeProgram);
-        gl.disable(gl.BLEND); 
-        
+        gl.disable(gl.BLEND);
+
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, viewTex);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_tex"), 0);
-        
-        gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), renderScale); 
 
-        gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_passes"), 1.0); 
+        gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_scale"), renderScale);
+
+        gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_passes"), 1.0);
         gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_gamma"), currentGamma);
         gl.uniform3f(gl.getUniformLocation(compositeProgram, "u_bg_a"), bgA[0], bgA[1], bgA[2]);
         gl.uniform3f(gl.getUniformLocation(compositeProgram, "u_bg_b"), bgB[0], bgB[1], bgB[2]);
         gl.uniform3f(gl.getUniformLocation(compositeProgram, "u_bg_params"), bgParams[0], bgParams[1], bgParams[2]);
         gl.uniform2f(gl.getUniformLocation(compositeProgram, "u_res"), canvas.width, canvas.height);
         gl.uniform2f(gl.getUniformLocation(compositeProgram, "u_off"), 0, 0);
-        gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_noise"), currentNoise); 
+        gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_noise"), currentNoise);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_invert"), isInverted?1:0);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_black"), incBlack?1:0);
         gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_inc_white"), incWhite?1:0);
-        gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_transparent"), 0); 
+        gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_transparent"), 0);
 
         let bMode = 0;
         if (blendMode === 'ADD') bMode = 1;
@@ -3003,10 +3038,10 @@ const interactionDimmer = isInteracting ? 0.4 : 1.0;
         const valW = parseFloat(document.getElementById('ui-print-w').value) || 1;
         const valH = parseFloat(document.getElementById('ui-print-h').value) || 1;
         const printAspect = valW / valH;
-        
-        gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_show_guide"), checkGuide.checked ? 1 : 0);
+
+        gl.uniform1i(gl.getUniformLocation(compositeProgram, "u_show_guide"), (checkGuide && checkGuide.checked) ? 1 : 0);
         gl.uniform1f(gl.getUniformLocation(compositeProgram, "u_print_aspect"), printAspect);
-        
+
         gl.drawArrays(gl.TRIANGLES, 0, 3);
     } catch (e) {
         uiError.innerText = "Render Error: " + e.message;
@@ -3014,7 +3049,7 @@ const interactionDimmer = isInteracting ? 0.4 : 1.0;
 }
 
 function loop() {
-    if (!isExporting) { 
+    if (!isExporting) {
         const dpr = window.devicePixelRatio || 1;
         const displayWidth  = Math.floor(canvas.clientWidth * dpr);
         const displayHeight = Math.floor(canvas.clientHeight * dpr);
@@ -3022,7 +3057,7 @@ function loop() {
         if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
             canvas.width = displayWidth;
             canvas.height = displayHeight;
-            resizeViewportFBO(); 
+            resizeViewportFBO();
         }
         renderFrame();
     }
@@ -3033,7 +3068,7 @@ requestAnimationFrame(loop);
 setTimeout(async () => {
     const uiStatus = document.getElementById('ui-main-status');
     const urlParams = new URLSearchParams(window.location.search);
-    const loadId = urlParams.get('id'); 
+    const loadId = urlParams.get('id');
 
     if (loadId) {
         const sanitizedId = loadId.replace(/[^a-zA-Z0-9_-]/g, '');
@@ -3049,21 +3084,22 @@ setTimeout(async () => {
                 if (!response.ok) throw new Error("File not found on server");
 
                 const d = await response.json();
-                
-                currentCoeffs = Object.values(d.coeffs || d).map(Number); 
-                applyState(d); 
+
+                currentCoeffs = Object.values(d.coeffs || d).map(Number);
+                applyState(d);
+                buildTuneUI();
 
                 if (uiStatus) {
-                    uiStatus.innerText = "Loaded " + (d.settings ? d.settings.id : sanitizedId); 
+                    uiStatus.innerText = "Loaded " + (d.settings ? d.settings.id : sanitizedId);
                     uiStatus.style.color = "#00ff00";
                 }
 
-                worker.postMessage({ 
-                    type: 'render', 
-                    coeffs: currentCoeffs, 
-                    physicsSteps: currentPhysicsSteps, 
-                    density: currentDensity, 
-                    genType: currentGenType 
+                worker.postMessage({
+                    type: 'render',
+                    coeffs: currentCoeffs,
+                    physicsSteps: currentPhysicsSteps,
+                    density: currentDensity,
+                    genType: currentGenType
                 });
 
             } catch (err) {
@@ -3072,16 +3108,16 @@ setTimeout(async () => {
                     uiStatus.innerText = "Failed to load: " + sanitizedId;
                     uiStatus.style.color = "red";
                 }
-                if (btnMine) btnMine.click(); 
+                if (btnMine) btnMine.click();
             }
         } else {
-             if (btnMine) btnMine.click(); 
+            if (btnMine) btnMine.click();
         }
     } else {
         if (uiStatus) {
             uiStatus.innerText = "Initializing First Attractor...";
             uiStatus.style.color = "#ffff00";
         }
-        if (btnMine) btnMine.click(); 
+        if (btnMine) btnMine.click();
     }
 }, 100);
