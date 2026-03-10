@@ -1387,6 +1387,53 @@ function buildTuneUI() {
     const container = document.getElementById('ui-tune-container');
     if (!container) return;
 
+    // --- NEW: SPECIAL 30-SLIDER POLY MODE ---
+    if (currentGenType === 'poly' && currentCoeffs && currentCoeffs.length >= 30) {
+        container.style.display = 'block';
+        let html = '<div style="color:#ff00ff; font-weight:bold; margin-bottom:5px; font-size:12px;">30-DIMENSIONAL TUNING</div>';
+
+        const terms = ['Const', 'x', 'y', 'z', 'x²', 'y²', 'z²', 'xy', 'xz', 'yz'];
+
+        for(let i=0; i<30; i++) {
+            const axis = i < 10 ? 'dX' : (i < 20 ? 'dY' : 'dZ');
+            const term = terms[i % 10];
+            const name = `${axis} (${term})`;
+            const val = currentCoeffs[i];
+
+            // Limit sliders to a tight +/- 0.5 range so they don't instantly explode the math
+            const min = val - 0.5;
+            const max = val + 0.5;
+            const step = 0.001;
+
+            html += `
+                <div style="display:flex; justify-content:space-between; font-size:10px; color:#aaa; margin-bottom:2px;">
+                    <span>${name}</span>
+                    <span id="tune-val-${i}">${val.toFixed(4)}</span>
+                </div>
+                <input type="range" id="tune-slider-${i}" min="${min}" max="${max}" step="${step}" value="${val}" style="width:100%; margin-bottom:10px;">
+            `;
+        }
+
+        container.innerHTML = html;
+
+        for(let i=0; i<30; i++) {
+            const slider = document.getElementById(`tune-slider-${i}`);
+            const label = document.getElementById(`tune-val-${i}`);
+
+            slider.oninput = (e) => {
+                const newVal = parseFloat(e.target.value);
+                label.innerText = newVal.toFixed(4);
+                currentCoeffs[i] = newVal;
+                worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: Math.min(20000, currentPhysicsSteps), density: 1, genType: currentGenType });
+            };
+            slider.onchange = () => {
+                worker.postMessage({ type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType });
+            };
+        }
+        return;
+    }
+
+    // --- STANDARD NAMED PARAMS (Lorenz, Aizawa, etc.) ---
     const defs = GEN_DEFS[currentGenType];
 
     if (!currentCoeffs || !defs.params || defs.params.length === 0) {
@@ -1427,21 +1474,13 @@ function buildTuneUI() {
             currentCoeffs[p.idx] = newVal;
 
             worker.postMessage({
-                type: 'render',
-                coeffs: currentCoeffs,
-                physicsSteps: Math.min(20000, currentPhysicsSteps),
-                density: 1,
-                genType: currentGenType
+                type: 'render', coeffs: currentCoeffs, physicsSteps: Math.min(20000, currentPhysicsSteps), density: 1, genType: currentGenType
             });
         };
 
         slider.onchange = () => {
             worker.postMessage({
-                type: 'render',
-                coeffs: currentCoeffs,
-                physicsSteps: currentPhysicsSteps,
-                density: currentDensity,
-                genType: currentGenType
+                type: 'render', coeffs: currentCoeffs, physicsSteps: currentPhysicsSteps, density: currentDensity, genType: currentGenType
             });
         };
     });
