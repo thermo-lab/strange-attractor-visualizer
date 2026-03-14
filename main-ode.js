@@ -2012,14 +2012,28 @@ div.appendChild(createSection("EXPORT", `
     <div style="margin-bottom:5px; font-size:12px; color:#aaa; border-top:1px solid #444; padding-top:10px;">
         <label style="cursor:pointer; color:#0f0;"><input type="checkbox" id="ui-vid-sparks-enable"> Enable Flow Sparks</label>
     </div>
-    <div style="display:flex; gap:5px; margin-bottom:10px;">
+    <div style="display:flex; gap:5px; margin-bottom:5px;">
         <div style="flex:1">
-            <span style="color:#0f0; font-size:10px;">Spark Count</span>
+            <span style="color:#0f0; font-size:10px;">Count</span>
             <input type="number" id="ui-vid-sparks" value="50" style="width:100%">
         </div>
         <div style="flex:1">
-            <span style="color:#0f0; font-size:10px;">Spark Length</span>
+            <span style="color:#0f0; font-size:10px;">Length</span>
             <input type="number" id="ui-vid-spark-len" value="200" style="width:100%">
+        </div>
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;" title="Must be a whole number for perfect MP4 loops">Loops/Vid</span>
+            <input type="number" id="ui-vid-spark-speed" value="1" step="1" style="width:100%">
+        </div>
+    </div>
+    <div style="display:flex; gap:5px; margin-bottom:10px;">
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">Size Mult</span>
+            <input type="number" id="ui-vid-spark-size" value="4.0" step="0.5" style="width:100%">
+        </div>
+        <div style="flex:1">
+            <span style="color:#0f0; font-size:10px;">Glow Mult</span>
+            <input type="number" id="ui-vid-spark-int" value="8.0" step="0.5" style="width:100%">
         </div>
     </div>
 
@@ -2811,13 +2825,17 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
         const baseSparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
         const actualSparkLen = Math.floor(baseSparkLen * gpuRenderedDensity);
         
-        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * 8.0);
-        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * 4.0);
+        const sparkSpeed = parseInt(document.getElementById('ui-vid-spark-speed')?.value) || 1;
+        const sparkSizeMult = parseFloat(document.getElementById('ui-vid-spark-size')?.value) || 4.0;
+        const sparkGlowMult = parseFloat(document.getElementById('ui-vid-spark-int')?.value) || 8.0;
+        
+        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * sparkGlowMult);
+        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * sparkSizeMult);
 
         const sparkOpacity = Math.min(1.0, safeOpacity * 20.0);
 
         for (let s = 0; s < numSparks; s++) {
-            let t = (currentProgress + sparkOffsets[s]) % 1.0;
+            let t = (((currentProgress * sparkSpeed) + sparkOffsets[s]) % 1.0 + 1.0) % 1.0;
             let startIdx = Math.floor(t * pointCount);
 
             let distToEdge = Math.min(startIdx, pointCount - startIdx);
@@ -3127,13 +3145,17 @@ function renderFrame() {
             const baseSparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
             const actualSparkLen = Math.floor(baseSparkLen * gpuRenderedDensity);
             
-            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * 8.0);
-            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * 4.0);
+            const sparkSpeed = parseInt(document.getElementById('ui-vid-spark-speed')?.value) || 1;
+            const sparkSizeMult = parseFloat(document.getElementById('ui-vid-spark-size')?.value) || 4.0;
+            const sparkGlowMult = parseFloat(document.getElementById('ui-vid-spark-int')?.value) || 8.0;
+            
+            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * sparkGlowMult);
+            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * sparkSizeMult);
 
             const sparkOpacity = Math.min(1.0, safeOpacity * 20.0);
 
             for (let s = 0; s < numSparks; s++) {
-                let t = (currentProgress + sparkOffsets[s]) % 1.0;
+                let t = (((currentProgress * sparkSpeed) + sparkOffsets[s]) % 1.0 + 1.0) % 1.0;
                 let startIdx = Math.floor(t * pointCount);
 
                 let distToEdge = Math.min(startIdx, pointCount - startIdx);
