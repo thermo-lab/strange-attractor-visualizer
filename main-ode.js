@@ -2009,9 +2009,12 @@ div.appendChild(createSection("EXPORT", `
         </div>
     </div>
 
+    <div style="margin-bottom:5px; font-size:12px; color:#aaa; border-top:1px solid #444; padding-top:10px;">
+        <label style="cursor:pointer; color:#0f0;"><input type="checkbox" id="ui-vid-sparks-enable"> Enable Flow Sparks</label>
+    </div>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <div style="flex:1">
-            <span style="color:#0f0; font-size:10px;">Flow Sparks</span>
+            <span style="color:#0f0; font-size:10px;">Spark Count</span>
             <input type="number" id="ui-vid-sparks" value="50" style="width:100%">
         </div>
         <div style="flex:1">
@@ -2273,7 +2276,7 @@ btnVideo.onclick = async () => {
         for (let i = 0; i < totalFrames; i++) {
             exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames} (${w}x${h})`;
             
-            // --- NEW: DETERMINISTIC VIDEO TIME DRIVER ---
+            // --- DETERMINISTIC VIDEO TIME DRIVER ---
             currentProgress = i / totalFrames; 
 
             const angle = (i / totalFrames) * Math.PI * 2;
@@ -2796,17 +2799,22 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
     if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
 
     // --- RENDER FLOW SPARKS FOR STILL EXPORTS ---
+    const sparksEnabled = document.getElementById('ui-vid-sparks-enable')?.checked;
     const numSparks = parseInt(document.getElementById('ui-vid-sparks')?.value) || 0;
-    if (numSparks > 0 && pointCount > 0) {
+    
+    if (sparksEnabled && numSparks > 0 && pointCount > 0) {
         if (sparkOffsets.length !== numSparks) {
             sparkOffsets = [];
             for(let i=0; i<numSparks; i++) sparkOffsets.push(Math.random());
         }
 
-        const sparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
+        const baseSparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
+        const actualSparkLen = Math.floor(baseSparkLen * gpuRenderedDensity);
         
-        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * 6.0);
-        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * 2.5);
+        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * 8.0);
+        gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * 4.0);
+
+        const sparkOpacity = Math.min(1.0, safeOpacity * 20.0);
 
         for (let s = 0; s < numSparks; s++) {
             let t = (currentProgress + sparkOffsets[s]) % 1.0;
@@ -2815,9 +2823,9 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
             let distToEdge = Math.min(startIdx, pointCount - startIdx);
             let edgeFade = Math.min(1.0, distToEdge / (pointCount * 0.05));
 
-            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), edgeFade * safeOpacity);
+            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), edgeFade * sparkOpacity);
 
-            let drawLen = Math.min(sparkLen, pointCount - startIdx);
+            let drawLen = Math.min(actualSparkLen, pointCount - startIdx);
             if (drawLen > 0) {
                 gl.drawArrays(gl.POINTS, startIdx, drawLen);
             }
@@ -3107,17 +3115,22 @@ function renderFrame() {
         if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
 
         // --- RENDER FLOW SPARKS FOR LIVE VIEWPORT ---
+        const sparksEnabled = document.getElementById('ui-vid-sparks-enable')?.checked;
         const numSparks = parseInt(document.getElementById('ui-vid-sparks')?.value) || 0;
-        if (numSparks > 0 && pointCount > 0) {
+        
+        if (sparksEnabled && numSparks > 0 && pointCount > 0) {
             if (sparkOffsets.length !== numSparks) {
                 sparkOffsets = [];
                 for(let i=0; i<numSparks; i++) sparkOffsets.push(Math.random());
             }
 
-            const sparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
+            const baseSparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
+            const actualSparkLen = Math.floor(baseSparkLen * gpuRenderedDensity);
             
-            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * 6.0);
-            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * 2.5);
+            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * 8.0);
+            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * 4.0);
+
+            const sparkOpacity = Math.min(1.0, safeOpacity * 20.0);
 
             for (let s = 0; s < numSparks; s++) {
                 let t = (currentProgress + sparkOffsets[s]) % 1.0;
@@ -3126,9 +3139,9 @@ function renderFrame() {
                 let distToEdge = Math.min(startIdx, pointCount - startIdx);
                 let edgeFade = Math.min(1.0, distToEdge / (pointCount * 0.05));
 
-                gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), edgeFade * safeOpacity);
+                gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), edgeFade * sparkOpacity);
 
-                let drawLen = Math.min(sparkLen, pointCount - startIdx);
+                let drawLen = Math.min(actualSparkLen, pointCount - startIdx);
                 if (drawLen > 0) {
                     gl.drawArrays(gl.POINTS, startIdx, drawLen);
                 }
@@ -3190,8 +3203,9 @@ function loop() {
             resizeViewportFBO(); 
         }
 
-        // --- NEW: LIVE PREVIEW TIME DRIVER ---
-        const duration = parseFloat(document.getElementById('ui-vid-time')?.value) || 5;
+        // --- LIVE PREVIEW TIME DRIVER ---
+        const durationStr = document.getElementById('ui-vid-time');
+        const duration = parseFloat(durationStr ? durationStr.value : 5) || 5;
         currentProgress = (Date.now() % (duration * 1000)) / (duration * 1000);
 
         renderFrame();
