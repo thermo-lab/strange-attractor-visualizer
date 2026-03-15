@@ -10,7 +10,7 @@
    - Power User Mode: Dynamic Search Bounds & Delta-Time control
    - Live Tuning: Real-time parameter sculpting
    - MP4 Export: Deterministic hardware-accelerated WebCodecs turntable loop
-   - Flow Sparks: Perfectly looping glowing particles injected along the mathematical path
+   - Flow Sparks: Perfectly looping glowing particles injected along the mathematical path with cubic shader fading
    - POD (Print on Demand) Integration via Peecho + reCAPTCHA v3
 */
 
@@ -798,6 +798,9 @@ uniform float u_focusSpan;
 uniform float u_aperture;
 uniform float u_opacity;
 
+// --- NEW: SPARK FADE DATA ---
+uniform vec3 u_sparkData; // x = startIdx, y = drawLen, z = direction
+
 out float v_vel;
 out float v_curv;
 out float v_time;
@@ -855,7 +858,17 @@ void main() {
         subPixelComp = finalSize * finalSize;
     }
     
-    v_attenuation = areaRatio * subPixelComp;
+    // --- NEW: COMET TAIL MATH ---
+    float sparkFade = 1.0;
+    if (u_sparkData.y > 0.0) {
+        float localIdx = float(gl_VertexID) - u_sparkData.x;
+        float n = clamp(localIdx / u_sparkData.y, 0.0, 1.0);
+        // If flying backward, flip the fade direction!
+        if (u_sparkData.z < 0.0) n = 1.0 - n; 
+        sparkFade = n * n * n; // Cubic falloff for a sharp head and smooth tail
+    }
+    
+    v_attenuation = areaRatio * subPixelComp * sparkFade;
     
     float jx = (hash(float(gl_VertexID)) - 0.5) * u_jitter;
     float jy = (hash(float(gl_VertexID) + 123.45) - 0.5) * u_jitter;
@@ -2810,6 +2823,9 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
     const scalar = totalH / 1080.0; 
     gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar);
 
+    // 1. Tell GPU this is the MAIN ATTRACTOR (Disable spark fade)
+    gl.uniform3f(gl.getUniformLocation(particleProgram, "u_sparkData"), 0.0, 0.0, 1.0);
+
     if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
 
     // --- RENDER FLOW SPARKS FOR STILL EXPORTS ---
@@ -2855,6 +2871,8 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
 
             let drawLen = Math.min(actualSparkLen, pointCount - startIdx);
             if (drawLen > 0 && finalOpacity > 0.001) {
+                // 2. Tell GPU this is a COMET (Pass start, length, and direction)
+                gl.uniform3f(gl.getUniformLocation(particleProgram, "u_sparkData"), startIdx, drawLen, sparkSpeed);
                 gl.drawArrays(gl.POINTS, startIdx, drawLen);
             }
         }
@@ -3140,6 +3158,9 @@ function renderFrame() {
         const scalar = Math.max(1.0, canvas.height / 1080.0); 
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar);
 
+        // 1. Tell GPU this is the MAIN ATTRACTOR (Disable spark fade)
+        gl.uniform3f(gl.getUniformLocation(particleProgram, "u_sparkData"), 0.0, 0.0, 1.0);
+
         if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
 
         // --- RENDER FLOW SPARKS FOR LIVE VIEWPORT ---
@@ -3185,6 +3206,8 @@ function renderFrame() {
 
                 let drawLen = Math.min(actualSparkLen, pointCount - startIdx);
                 if (drawLen > 0 && finalOpacity > 0.001) {
+                    // 2. Tell GPU this is a COMET (Pass start, length, and direction)
+                    gl.uniform3f(gl.getUniformLocation(particleProgram, "u_sparkData"), startIdx, drawLen, sparkSpeed);
                     gl.drawArrays(gl.POINTS, startIdx, drawLen);
                 }
             }
