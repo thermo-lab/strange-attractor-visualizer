@@ -185,9 +185,9 @@ let currentJitter = 0.5;
 let currentVariation = 0.0;
 let isExporting = false; 
 
-// --- FLOW SPARKS STATE ---
+// --- FLOW SPARKS STATE (LIFECYCLE ENGINE) ---
 let currentProgress = 0.0;
-let sparkOffsets = [];
+let sparksData = []; // Holds { basePos, timeOffset } for perfectly looping lifecycles
 
 let exportUnit = 'inches'; 
 let exportTransparent = false; 
@@ -466,7 +466,7 @@ const workerCode = `
                 res.dz = c0 + c1*px + c2*py + c3*pz + c4*px*px + c5*py*py + c6*pz*pz + c7*px*py + c8*px*pz + c9*py*pz;
             }
         }
-
+        
         let k1={dx:0,dy:0,dz:0}, k2={dx:0,dy:0,dz:0}, k3={dx:0,dy:0,dz:0}, k4={dx:0,dy:0,dz:0};
         
         let settleSteps = def.settleSteps || 1500;
@@ -2022,8 +2022,8 @@ div.appendChild(createSection("EXPORT", `
             <input type="number" id="ui-vid-spark-len" value="200" style="width:100%">
         </div>
         <div style="flex:1">
-            <span style="color:#0f0; font-size:10px;" title="Must be a whole number for perfect MP4 loops">Loops/Vid</span>
-            <input type="number" id="ui-vid-spark-speed" value="1" step="1" style="width:100%">
+            <span style="color:#0f0; font-size:10px;" title="Distance % traveled per loop">Speed (%)</span>
+            <input type="number" id="ui-vid-spark-speed" value="2.0" step="0.5" style="width:100%">
         </div>
     </div>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -2817,34 +2817,44 @@ function renderTileParticles(totalW, totalH, tileBounds, opac, forcedAspect, jit
     const numSparks = parseInt(document.getElementById('ui-vid-sparks')?.value) || 0;
     
     if (sparksEnabled && numSparks > 0 && pointCount > 0) {
-        if (sparkOffsets.length !== numSparks) {
-            sparkOffsets = [];
-            for(let i=0; i<numSparks; i++) sparkOffsets.push(Math.random());
+        if (sparksData.length !== numSparks) {
+            sparksData = [];
+            for(let i=0; i<numSparks; i++) {
+                sparksData.push({ basePos: Math.random(), timeOffset: Math.random() });
+            }
         }
 
         const baseSparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
         const actualSparkLen = Math.floor(baseSparkLen * gpuRenderedDensity);
         
-        const sparkSpeed = parseInt(document.getElementById('ui-vid-spark-speed')?.value) || 1;
+        const sparkSpeed = parseFloat(document.getElementById('ui-vid-spark-speed')?.value) || 2.0;
         const sparkSizeMult = parseFloat(document.getElementById('ui-vid-spark-size')?.value) || 4.0;
         const sparkGlowMult = parseFloat(document.getElementById('ui-vid-spark-int')?.value) || 8.0;
         
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * sparkGlowMult);
         gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * sparkSizeMult);
 
-        const sparkOpacity = Math.min(1.0, safeOpacity * 20.0);
+        const sparkOpacityMax = Math.min(1.0, safeOpacity * 20.0);
 
         for (let s = 0; s < numSparks; s++) {
-            let t = (((currentProgress * sparkSpeed) + sparkOffsets[s]) % 1.0 + 1.0) % 1.0;
-            let startIdx = Math.floor(t * pointCount);
-
+            let sd = sparksData[s];
+            
+            let localTime = (currentProgress + sd.timeOffset) % 1.0;
+            let travelFraction = sparkSpeed / 100.0;
+            let currentPos = ((sd.basePos + (localTime * travelFraction)) % 1.0 + 1.0) % 1.0;
+            
+            let startIdx = Math.floor(currentPos * pointCount);
+            
+            let lifeFade = Math.sin(localTime * Math.PI);
+            
             let distToEdge = Math.min(startIdx, pointCount - startIdx);
             let edgeFade = Math.min(1.0, distToEdge / (pointCount * 0.05));
 
-            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), edgeFade * sparkOpacity);
+            let finalOpacity = lifeFade * edgeFade * sparkOpacityMax;
+            gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), finalOpacity);
 
             let drawLen = Math.min(actualSparkLen, pointCount - startIdx);
-            if (drawLen > 0) {
+            if (drawLen > 0 && finalOpacity > 0.001) {
                 gl.drawArrays(gl.POINTS, startIdx, drawLen);
             }
         }
@@ -3137,34 +3147,44 @@ function renderFrame() {
         const numSparks = parseInt(document.getElementById('ui-vid-sparks')?.value) || 0;
         
         if (sparksEnabled && numSparks > 0 && pointCount > 0) {
-            if (sparkOffsets.length !== numSparks) {
-                sparkOffsets = [];
-                for(let i=0; i<numSparks; i++) sparkOffsets.push(Math.random());
+            if (sparksData.length !== numSparks) {
+                sparksData = [];
+                for(let i=0; i<numSparks; i++) {
+                    sparksData.push({ basePos: Math.random(), timeOffset: Math.random() });
+                }
             }
 
             const baseSparkLen = parseInt(document.getElementById('ui-vid-spark-len')?.value) || 200;
             const actualSparkLen = Math.floor(baseSparkLen * gpuRenderedDensity);
             
-            const sparkSpeed = parseInt(document.getElementById('ui-vid-spark-speed')?.value) || 1;
+            const sparkSpeed = parseFloat(document.getElementById('ui-vid-spark-speed')?.value) || 2.0;
             const sparkSizeMult = parseFloat(document.getElementById('ui-vid-spark-size')?.value) || 4.0;
             const sparkGlowMult = parseFloat(document.getElementById('ui-vid-spark-int')?.value) || 8.0;
             
             gl.uniform1f(gl.getUniformLocation(particleProgram, "u_intensity"), currentIntensity * sparkGlowMult);
             gl.uniform1f(gl.getUniformLocation(particleProgram, "u_pointSize"), currentPointSize * scalar * sparkSizeMult);
 
-            const sparkOpacity = Math.min(1.0, safeOpacity * 20.0);
+            const sparkOpacityMax = Math.min(1.0, safeOpacity * 20.0);
 
             for (let s = 0; s < numSparks; s++) {
-                let t = (((currentProgress * sparkSpeed) + sparkOffsets[s]) % 1.0 + 1.0) % 1.0;
-                let startIdx = Math.floor(t * pointCount);
-
+                let sd = sparksData[s];
+                
+                let localTime = (currentProgress + sd.timeOffset) % 1.0;
+                let travelFraction = sparkSpeed / 100.0;
+                let currentPos = ((sd.basePos + (localTime * travelFraction)) % 1.0 + 1.0) % 1.0;
+                
+                let startIdx = Math.floor(currentPos * pointCount);
+                
+                let lifeFade = Math.sin(localTime * Math.PI);
+                
                 let distToEdge = Math.min(startIdx, pointCount - startIdx);
                 let edgeFade = Math.min(1.0, distToEdge / (pointCount * 0.05));
 
-                gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), edgeFade * sparkOpacity);
+                let finalOpacity = lifeFade * edgeFade * sparkOpacityMax;
+                gl.uniform1f(gl.getUniformLocation(particleProgram, "u_opacity"), finalOpacity);
 
                 let drawLen = Math.min(actualSparkLen, pointCount - startIdx);
-                if (drawLen > 0) {
+                if (drawLen > 0 && finalOpacity > 0.001) {
                     gl.drawArrays(gl.POINTS, startIdx, drawLen);
                 }
             }
