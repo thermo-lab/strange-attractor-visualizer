@@ -2010,7 +2010,9 @@ div.appendChild(createSection("EXPORT", `
     <button id="ui-btn-snap" style="width:100%; background:#fff; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold; margin-bottom:5px;">📸 HD SNAPSHOT</button>
     <button id="ui-btn-order" style="width:100%; background:#0f0; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold; margin-bottom:15px;">🛒 ORDER PRINT</button>
 
-    <div style="margin-bottom:5px; font-size:12px; color:#aaa; border-top:1px solid #444; padding-top:10px;">Video Loop (Turntable)</div>
+<div style="margin-bottom:5px; font-size:12px; color:#aaa; border-top:1px solid #444; padding-top:10px;">
+        <label style="cursor:pointer; color:#fff; font-weight:bold;"><input type="checkbox" id="ui-vid-turntable" checked> Turntable Rotation</label>
+    </div>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <div style="flex:1">
             <span style="color:#0f0; font-size:10px;">Duration (s)</span>
@@ -2298,17 +2300,24 @@ btnVideo.onclick = async () => {
             }
         });
 
-        videoEncoder.configure(videoConfig);
+videoEncoder.configure(videoConfig);
         
+        // --- CHECK TURNTABLE STATE ---
+        const useTurntable = document.getElementById('ui-vid-turntable')?.checked ?? true;
+
         for (let i = 0; i < totalFrames; i++) {
             exportLog.innerText = `🎥 Rendering Frame ${i+1} / ${totalFrames} (${w}x${h})`;
             
             // --- DETERMINISTIC VIDEO TIME DRIVER ---
             currentProgress = i / totalFrames; 
 
-            const angle = (i / totalFrames) * Math.PI * 2;
-            const turnQuat = qFromAxisAngle([0, 1, 0], angle);
-            currentQuat = qMult(turnQuat, originalQuat); 
+            if (useTurntable) {
+                const angle = (i / totalFrames) * Math.PI * 2;
+                const turnQuat = qFromAxisAngle([0, 1, 0], angle);
+                currentQuat = qMult(turnQuat, originalQuat); 
+            } else {
+                currentQuat = [...originalQuat]; // Keep camera perfectly static
+            }
             
             if (videoEncoder.state === 'closed') {
                 throw new Error("Encoder closed unexpectedly during render.");
