@@ -2011,7 +2011,7 @@ div.appendChild(createSection("EXPORT", `
     <button id="ui-btn-order" style="width:100%; background:#0f0; color:#000; border:none; padding:10px; cursor:pointer; font-weight:bold; margin-bottom:15px;">🛒 ORDER PRINT</button>
 
 <div style="margin-bottom:5px; font-size:12px; color:#aaa; border-top:1px solid #444; padding-top:10px;">
-        <label style="cursor:pointer; color:#fff; font-weight:bold;"><input type="checkbox" id="ui-vid-turntable" checked> Turntable Rotation</label>
+        <label style="cursor:pointer; color:#fff; font-weight:bold;"><input type="checkbox" id="ui-vid-turntable"> Turntable Rotation</label>
     </div>
     <div style="display:flex; gap:5px; margin-bottom:10px;">
         <div style="flex:1">
@@ -2335,18 +2335,36 @@ videoEncoder.configure(videoConfig);
             await new Promise(r => setTimeout(r, 0)); 
         }
 
-        exportLog.innerText = "📦 Finalizing MP4...";
+exportLog.innerText = "📦 Finalizing MP4...";
         await videoEncoder.flush();
         muxer.finalize();
         
+        // Grab the exact current state to generate a matching ID for both files
+        const meta = serializeState();
+        const exportID = meta.id;
+
         const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; 
-        a.download = `attractor_loop_${generateID()}.mp4`;
+        a.download = `attractor_${exportID}.mp4`;
         document.body.appendChild(a); 
         a.click(); 
         document.body.removeChild(a);
+        
+        // --- NEW: RESPECT JSON CHECKBOX ---
+        const checkJson = document.getElementById('ui-export-json');
+        if (checkJson && checkJson.checked) {
+            const data = { coeffs: Array.from(currentCoeffs), settings: meta };
+            const jsonBlob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+            const jUrl = URL.createObjectURL(jsonBlob);
+            const jA = document.createElement('a');
+            jA.href = jUrl; 
+            jA.download = `attractor_${exportID}.json`;
+            document.body.appendChild(jA); 
+            jA.click(); 
+            document.body.removeChild(jA);
+        }
         
         canvas.width = origW;
         canvas.height = origH;
